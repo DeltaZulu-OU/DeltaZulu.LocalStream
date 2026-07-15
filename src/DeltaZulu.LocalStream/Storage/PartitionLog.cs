@@ -167,7 +167,7 @@ internal sealed class PartitionLog
     {
         lock (_sync)
         {
-            while (_segments.Count > 1 && ViolatesPolicy(retention, nowUtc))
+            while (_segments.Count > 1 && ViolatesPolicy(_segments, retention, nowUtc))
             {
                 var oldest = _segments[0];
                 File.Delete(oldest.Path);
@@ -176,11 +176,39 @@ internal sealed class PartitionLog
         }
     }
 
-    private bool ViolatesPolicy(RetentionOptions retention, DateTimeOffset nowUtc)
+    /// <summary>
+    /// Dry run of <see cref="ApplyRetention"/>: reports what the same policy
+    /// walk would delete, without deleting.
+    /// </summary>
+    public (int Segments, long Bytes, long Records, long FirstRetainedOffset) AuditRetention(
+        RetentionOptions retention,
+        DateTimeOffset nowUtc)
     {
-        var oldest = _segments[0];
+        lock (_sync)
+        {
+            var remaining = new List<Segment>(_segments);
+            var segments = 0;
+            var bytes = 0L;
+            var records = 0L;
+            while (remaining.Count > 1 && ViolatesPolicy(remaining, retention, nowUtc))
+            {
+                var oldest = remaining[0];
+                segments++;
+                bytes += oldest.SizeBytes;
+                records += oldest.RecordCount;
+                remaining.RemoveAt(0);
+            }
 
-        if (retention.MaxBytes is { } maxBytes && _segments.Sum(s => s.SizeBytes) > maxBytes)
+            var firstRetained = remaining.FirstOrDefault(s => s.RecordCount > 0)?.BaseOffset ?? _nextOffset;
+            return (segments, bytes, records, firstRetained);
+        }
+    }
+
+    private static bool ViolatesPolicy(List<Segment> segments, RetentionOptions retention, DateTimeOffset nowUtc)
+    {
+        var oldest = segments[0];
+
+        if (retention.MaxBytes is { } maxBytes && segments.Sum(s => s.SizeBytes) > maxBytes)
         {
             return true;
         }
