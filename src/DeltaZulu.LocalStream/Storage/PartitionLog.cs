@@ -299,10 +299,7 @@ internal sealed class PartitionLog
         if (active is null || active.SizeBytes >= _maxSegmentBytes)
         {
             active = new Segment(_nextOffset, SegmentPath(_nextOffset));
-            using (File.Create(active.Path))
-            {
-            }
-
+            SafeFiles.CreateEmpty(active.Path);
             _segments.Add(active);
         }
 

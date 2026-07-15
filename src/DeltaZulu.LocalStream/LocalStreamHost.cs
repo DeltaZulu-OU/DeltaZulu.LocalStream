@@ -374,8 +374,6 @@ public sealed class LocalStreamHost : IAsyncDisposable
         Directory.CreateDirectory(metadataDirectory);
 
         var path = Path.Combine(metadataDirectory, fileName);
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(metadata, MetadataJsonOptions));
-        File.Move(temp, path, overwrite: true);
+        SafeFiles.WriteAllTextAtomic(path, JsonSerializer.Serialize(metadata, MetadataJsonOptions));
     }
 }

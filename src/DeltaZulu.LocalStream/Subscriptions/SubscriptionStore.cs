@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
+using DeltaZulu.LocalStream.Storage;
 
 namespace DeltaZulu.LocalStream.Subscriptions;
 
@@ -38,9 +39,7 @@ internal sealed class SubscriptionStore(string rootDirectory)
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         var document = new CheckpointDocument(offset, DateTimeOffset.UtcNow);
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(document));
-        File.Move(temp, path, overwrite: true);
+        SafeFiles.WriteAllTextAtomic(path, JsonSerializer.Serialize(document));
 
         _cache[(subscriptionId, topic, partition)] = offset;
     }
