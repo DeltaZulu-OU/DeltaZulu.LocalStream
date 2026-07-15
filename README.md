@@ -52,4 +52,12 @@ await foreach (var record in archive.ReadAsync("agent.output"))
 }
 ```
 
+Subscriptions can also be declared in `LocalStreamOptions.Subscriptions` (with `Required` and `StartPosition`), observed via `GetTopicMetrics`/`GetSubscriptionMetrics`, and driven by processors:
+
+```csharp
+// Runs under the durable subscription "processor.logcluster-sampler";
+// output is appended before the input offset is committed.
+await host.RunProcessorOnceAsync("logcluster-sampler", "agent.output", new LogClusterSampler());
+```
+
 Delivery is at-least-once; ordering is preserved within a partition; retention is independent of subscription progress (a lagging subscription enters `OffsetExpired` and must be reset). Sinks should use `StreamRecord.EventId` or stream coordinates for idempotency.
