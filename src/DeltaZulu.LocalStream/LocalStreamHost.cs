@@ -243,6 +243,40 @@ public sealed class LocalStreamHost : IAsyncDisposable
         return processed;
     }
 
+    /// <summary>
+    /// Runs a processor continuously: drains available input, then polls for
+    /// more until the token is cancelled. Cancellation is the normal shutdown
+    /// path and completes the task without throwing. Offset semantics are the
+    /// same as <see cref="RunProcessorOnceAsync"/>.
+    /// </summary>
+    public async Task RunProcessorAsync<TIn, TOut>(
+        string processorName,
+        string inputTopic,
+        ILocalStreamProcessor<TIn, TOut> processor,
+        TimeSpan? pollInterval = null,
+        CancellationToken cancellationToken = default)
+    {
+        var interval = pollInterval ?? TimeSpan.FromMilliseconds(250);
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var processed = await RunProcessorOnceAsync(processorName, inputTopic, processor, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (processed == 0)
+                {
+                    await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Graceful shutdown.
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
         _started = false;
