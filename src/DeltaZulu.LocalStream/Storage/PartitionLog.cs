@@ -223,6 +223,43 @@ internal sealed class PartitionLog
         return false;
     }
 
+    /// <summary>
+    /// Read-only integrity scan: re-validates every segment line's CRC frame
+    /// and reports bytes trailing the last valid record. Never modifies files.
+    /// </summary>
+    public (int Segments, long ValidRecords, long TrailingGarbageBytes) Verify()
+    {
+        List<Segment> snapshot;
+        lock (_sync)
+        {
+            snapshot = [.. _segments];
+        }
+
+        var segments = 0;
+        var validRecords = 0L;
+        var garbageBytes = 0L;
+        foreach (var segment in snapshot)
+        {
+            long fileLength;
+            try
+            {
+                fileLength = new FileInfo(segment.Path).Length;
+            }
+            catch (FileNotFoundException)
+            {
+                // Deleted by retention between snapshot and scan.
+                continue;
+            }
+
+            var (envelopes, validBytes) = ScanSegment(segment.Path);
+            segments++;
+            validRecords += envelopes.Count;
+            garbageBytes += fileLength - validBytes;
+        }
+
+        return (segments, validRecords, garbageBytes);
+    }
+
     private Segment ActiveSegmentForWrite()
     {
         var active = _segments.Count > 0 ? _segments[^1] : null;
