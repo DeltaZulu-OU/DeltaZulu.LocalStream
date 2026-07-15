@@ -86,33 +86,66 @@ internal sealed class PartitionLog
         }
     }
 
-    public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, JsonElement payload)
+    internal readonly record struct PendingRecord(
+        string EventId,
+        DateTimeOffset PublishedUtc,
+        IReadOnlyDictionary<string, string>? Headers,
+        JsonElement Payload);
+
+    public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, JsonElement payload) =>
+        AppendMany([new PendingRecord(eventId, publishedUtc, headers, payload)]);
+
+    /// <summary>
+    /// Appends records consecutively with one durable flush per touched
+    /// segment. Returns the offset of the first record; the rest follow
+    /// contiguously.
+    /// </summary>
+    public long AppendMany(IReadOnlyList<PendingRecord> records)
     {
         lock (_sync)
         {
-            var envelope = new RecordEnvelope
+            var firstOffset = _nextOffset;
+            FileStream? stream = null;
+            Segment? current = null;
+            try
             {
-                Offset = _nextOffset,
-                EventId = eventId,
-                PublishedUtc = publishedUtc,
-                Headers = headers is null ? [] : new Dictionary<string, string>(headers),
-                Payload = payload,
-            };
+                foreach (var record in records)
+                {
+                    var envelope = new RecordEnvelope
+                    {
+                        Offset = _nextOffset,
+                        EventId = record.EventId,
+                        PublishedUtc = record.PublishedUtc,
+                        Headers = record.Headers is null ? [] : new Dictionary<string, string>(record.Headers),
+                        Payload = record.Payload,
+                    };
 
-            var json = JsonSerializer.SerializeToUtf8Bytes(envelope);
-            var line = FrameLine(json);
+                    var line = FrameLine(JsonSerializer.SerializeToUtf8Bytes(envelope));
 
-            var segment = ActiveSegmentForWrite();
-            using (var stream = new FileStream(segment.Path, FileMode.Append, FileAccess.Write, FileShare.Read))
+                    var segment = ActiveSegmentForWrite();
+                    if (!ReferenceEquals(segment, current))
+                    {
+                        stream?.Flush(flushToDisk: true);
+                        stream?.Dispose();
+                        stream = new FileStream(segment.Path, FileMode.Append, FileAccess.Write, FileShare.Read);
+                        current = segment;
+                    }
+
+                    stream!.Write(line);
+                    segment.SizeBytes += line.Length;
+                    segment.RecordCount++;
+                    segment.NewestRecordUtc = record.PublishedUtc;
+                    _nextOffset++;
+                }
+
+                stream?.Flush(flushToDisk: true);
+            }
+            finally
             {
-                stream.Write(line);
-                stream.Flush(flushToDisk: true);
+                stream?.Dispose();
             }
 
-            segment.SizeBytes += line.Length;
-            segment.RecordCount++;
-            segment.NewestRecordUtc = publishedUtc;
-            return _nextOffset++;
+            return firstOffset;
         }
     }
 
