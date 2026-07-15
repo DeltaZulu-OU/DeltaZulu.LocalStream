@@ -27,6 +27,8 @@ internal sealed class TopicLog
 
     public int PartitionCount => _partitions.Length;
 
+    public long TotalSizeBytes => _partitions.Sum(p => p.SizeBytes);
+
     public PartitionLog Partition(int index) => _partitions[index];
 
     public long Append(

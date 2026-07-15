@@ -27,10 +27,10 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             });
         }
 
-        JsonElement payload;
+        byte[] payloadBytes;
         try
         {
-            payload = JsonSerializer.SerializeToElement(record);
+            payloadBytes = JsonSerializer.SerializeToUtf8Bytes(record);
         }
         catch (NotSupportedException exception)
         {
@@ -39,6 +39,31 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
                 Status = AppendStatus.FailedSerialization,
                 Reason = exception.Message,
             });
+        }
+
+        if (log.Options.MaxRecordBytes is { } maxRecordBytes && payloadBytes.Length > maxRecordBytes)
+        {
+            return ValueTask.FromResult(new AppendResult
+            {
+                Status = AppendStatus.RejectedRecordTooLarge,
+                Reason = $"Serialized payload is {payloadBytes.Length} bytes; topic '{topic}' allows {maxRecordBytes}.",
+            });
+        }
+
+        if (log.Options.MaxTotalBytes is { } maxTotalBytes && log.TotalSizeBytes >= maxTotalBytes)
+        {
+            return ValueTask.FromResult(new AppendResult
+            {
+                Status = AppendStatus.RejectedStreamFull,
+                Reason = $"Topic '{topic}' holds {log.TotalSizeBytes} bytes, at or above its {maxTotalBytes}-byte cap. " +
+                    "Retention must free sealed segments before appends resume.",
+            });
+        }
+
+        JsonElement payload;
+        using (var document = JsonDocument.Parse(payloadBytes))
+        {
+            payload = document.RootElement.Clone();
         }
 
         var eventId = options?.EventId ?? Guid.NewGuid().ToString("N");

@@ -48,6 +48,19 @@ public sealed class TopicOptions
     /// <summary>Segment roll threshold. A new segment starts once the active one reaches this size.</summary>
     public long MaxSegmentBytes { get; init; } = 128 * 1024 * 1024;
 
+    /// <summary>
+    /// Maximum serialized payload size per record. Larger appends are rejected
+    /// with <see cref="AppendStatus.RejectedRecordTooLarge"/>. Unlimited when null.
+    /// </summary>
+    public long? MaxRecordBytes { get; init; }
+
+    /// <summary>
+    /// Hard disk cap for the topic across all partitions. Appends at or above
+    /// it are rejected with <see cref="AppendStatus.RejectedStreamFull"/> until
+    /// retention frees sealed segments. Unlimited when null.
+    /// </summary>
+    public long? MaxTotalBytes { get; init; }
+
     public RetentionOptions Retention { get; init; } = new();
 }
 
