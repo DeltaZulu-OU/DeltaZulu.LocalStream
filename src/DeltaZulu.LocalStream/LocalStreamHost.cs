@@ -94,6 +94,32 @@ public sealed class LocalStreamHost : IAsyncDisposable
             : SubscriptionState.Active;
     }
 
+    /// <summary>
+    /// Dry-run retention audit: what the topic's policy would delete right
+    /// now, per partition, without deleting anything.
+    /// </summary>
+    public RetentionAudit AuditRetention(string topic)
+    {
+        EnsureStarted();
+        var log = RequireTopic(topic);
+        var now = DateTimeOffset.UtcNow;
+
+        var partitions = new List<PartitionRetentionAudit>(log.PartitionCount);
+        for (var i = 0; i < log.PartitionCount; i++)
+        {
+            var (segments, bytes, records, firstRetained) =
+                log.Partition(i).AuditRetention(log.Options.Retention, now);
+            partitions.Add(new PartitionRetentionAudit(i, segments, bytes, records, firstRetained));
+        }
+
+        return new RetentionAudit(
+            topic,
+            partitions.Sum(p => p.DeletableSegments),
+            partitions.Sum(p => p.DeletableBytes),
+            partitions.Sum(p => p.DeletableRecords),
+            partitions);
+    }
+
     public TopicMetrics GetTopicMetrics(string topic)
     {
         EnsureStarted();
