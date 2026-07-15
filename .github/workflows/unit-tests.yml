@@ -10,6 +10,8 @@ on:
       - '*.slnx'              # Triggers on any solution file changes without hardcoding the name
       - 'src/**'
       - 'tests/**'
+      - '.gitmodules'         # Submodule pointer changes affect the build
+      - 'external/**'
   push:
     branches: [ main, master ]
     paths:
@@ -20,6 +22,8 @@ on:
       - '*.slnx'
       - 'src/**'
       - 'tests/**'
+      - '.gitmodules'
+      - 'external/**'
   workflow_dispatch:
 
 permissions:
