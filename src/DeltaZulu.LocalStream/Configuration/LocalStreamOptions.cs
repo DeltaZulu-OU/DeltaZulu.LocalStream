@@ -6,6 +6,37 @@ public sealed class LocalStreamOptions
     public required string StoragePath { get; init; }
 
     public IList<TopicOptions> Topics { get; } = [];
+
+    public IList<SubscriptionOptions> Subscriptions { get; } = [];
+}
+
+public enum StartPosition
+{
+    /// <summary>A new subscription starts from the earliest retained record.</summary>
+    Earliest,
+
+    /// <summary>A new subscription starts after the records existing at registration.</summary>
+    Latest,
+}
+
+/// <summary>
+/// A named subscription registered at host startup. The start position applies
+/// only when the subscription has no checkpoint yet; an existing checkpoint is
+/// never reset by configuration.
+/// </summary>
+public sealed class SubscriptionOptions
+{
+    public required string Id { get; init; }
+
+    public required string Topic { get; init; }
+
+    /// <summary>
+    /// Required subscriptions (e.g. archive) are the evidence path: operators
+    /// should alert on their lag. Optional ones may sample or fall behind.
+    /// </summary>
+    public bool Required { get; init; }
+
+    public StartPosition StartPosition { get; init; } = StartPosition.Earliest;
 }
 
 public sealed class TopicOptions

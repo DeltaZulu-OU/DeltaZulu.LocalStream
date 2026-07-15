@@ -42,6 +42,7 @@ public sealed class LocalStreamHost : IAsyncDisposable
         }
 
         _subscriptions = new SubscriptionStore(_options.StoragePath);
+        RegisterConfiguredSubscriptions();
         _started = true;
         return Task.CompletedTask;
     }
@@ -122,11 +123,55 @@ public sealed class LocalStreamHost : IAsyncDisposable
         }
     }
 
+    private void RegisterConfiguredSubscriptions()
+    {
+        foreach (var subscription in _options.Subscriptions)
+        {
+            if (!_topics.TryGetValue(subscription.Topic, out var topic))
+            {
+                throw new InvalidOperationException(
+                    $"Subscription '{subscription.Id}' references unknown topic '{subscription.Topic}'.");
+            }
+
+            if (subscription.StartPosition != StartPosition.Latest)
+            {
+                continue;
+            }
+
+            // "Latest" means: skip everything that existed at registration.
+            // Only applies before the first checkpoint; configured start
+            // positions never reset live subscription progress.
+            for (var partition = 0; partition < topic.PartitionCount; partition++)
+            {
+                var committed = _subscriptions!.GetCommittedOffset(subscription.Id, subscription.Topic, partition);
+                var nextOffset = topic.Partition(partition).NextOffset;
+                if (committed == SubscriptionStore.NoCheckpoint && nextOffset > 0)
+                {
+                    _subscriptions.Commit(subscription.Id, subscription.Topic, partition, nextOffset - 1);
+                }
+            }
+        }
+
+        WriteSubscriptionMetadata();
+    }
+
+    private void WriteSubscriptionMetadata()
+    {
+        var metadata = _options.Subscriptions
+            .Select(s => new
+            {
+                id = s.Id,
+                topic = s.Topic,
+                required = s.Required,
+                startPosition = s.StartPosition.ToString(),
+            })
+            .ToList();
+
+        WriteMetadataFile("subscriptions.json", metadata);
+    }
+
     private void WriteTopicMetadata()
     {
-        var metadataDirectory = Path.Combine(_options.StoragePath, "metadata");
-        Directory.CreateDirectory(metadataDirectory);
-
         var metadata = _options.Topics
             .Select(t => new
             {
@@ -137,7 +182,15 @@ public sealed class LocalStreamHost : IAsyncDisposable
             })
             .ToList();
 
-        var path = Path.Combine(metadataDirectory, "topics.json");
+        WriteMetadataFile("topics.json", metadata);
+    }
+
+    private void WriteMetadataFile(string fileName, object metadata)
+    {
+        var metadataDirectory = Path.Combine(_options.StoragePath, "metadata");
+        Directory.CreateDirectory(metadataDirectory);
+
+        var path = Path.Combine(metadataDirectory, fileName);
         var temp = path + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(metadata, MetadataJsonOptions));
         File.Move(temp, path, overwrite: true);
