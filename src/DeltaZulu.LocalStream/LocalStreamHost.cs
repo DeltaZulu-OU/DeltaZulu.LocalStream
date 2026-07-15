@@ -120,6 +120,31 @@ public sealed class LocalStreamHost : IAsyncDisposable
             partitions);
     }
 
+    /// <summary>
+    /// Read-only integrity scan of all of a topic's segments. Reports torn
+    /// tails and CRC failures without modifying anything; startup recovery is
+    /// what repairs them.
+    /// </summary>
+    public StorageVerification VerifyStorage(string topic)
+    {
+        EnsureStarted();
+        var log = RequireTopic(topic);
+
+        var partitions = new List<PartitionVerification>(log.PartitionCount);
+        for (var i = 0; i < log.PartitionCount; i++)
+        {
+            var (segments, validRecords, garbageBytes) = log.Partition(i).Verify();
+            partitions.Add(new PartitionVerification(i, segments, validRecords, garbageBytes));
+        }
+
+        return new StorageVerification(
+            topic,
+            partitions.Sum(p => p.SegmentsScanned),
+            partitions.Sum(p => p.ValidRecords),
+            partitions.All(p => p.TrailingGarbageBytes == 0),
+            partitions);
+    }
+
     public TopicMetrics GetTopicMetrics(string topic)
     {
         EnsureStarted();
