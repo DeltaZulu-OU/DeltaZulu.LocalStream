@@ -152,6 +152,46 @@ public sealed class LocalStreamHost : IAsyncDisposable
             partitions);
     }
 
+    /// <summary>
+    /// Runs a processor over all currently available input records under the
+    /// durable subscription <c>processor.&lt;name&gt;</c>. Each input offset is
+    /// committed only after <see cref="ILocalStreamProcessor{TIn,TOut}.ProcessAsync"/>
+    /// completes, so a failure stops the run and the failed record is
+    /// redelivered on the next run. Returns the number of records processed.
+    /// </summary>
+    public async Task<int> RunProcessorOnceAsync<TIn, TOut>(
+        string processorName,
+        string inputTopic,
+        ILocalStreamProcessor<TIn, TOut> processor,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processorName);
+        ArgumentNullException.ThrowIfNull(processor);
+        EnsureStarted();
+        _ = RequireTopic(inputTopic);
+
+        var subscriptionId = "processor." + processorName;
+        var consumer = CreateConsumer<TIn>(subscriptionId);
+        var producer = CreateProducer<TOut>();
+
+        var processed = 0;
+        await foreach (var record in consumer.ReadAsync(inputTopic, null, cancellationToken).ConfigureAwait(false))
+        {
+            var context = new ProcessorContext
+            {
+                ProcessorName = processorName,
+                SubscriptionId = subscriptionId,
+                InputPosition = record.Position,
+            };
+
+            await processor.ProcessAsync(record, producer, context, cancellationToken).ConfigureAwait(false);
+            await consumer.CommitAsync(record.Position, cancellationToken).ConfigureAwait(false);
+            processed++;
+        }
+
+        return processed;
+    }
+
     public ValueTask DisposeAsync()
     {
         _started = false;
