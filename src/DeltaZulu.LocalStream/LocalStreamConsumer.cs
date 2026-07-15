@@ -27,7 +27,7 @@ internal sealed class LocalStreamConsumer<T>(LocalStreamHost host, string subscr
         {
             cancellationToken.ThrowIfCancellationRequested();
             var partitionLog = log.Partition(partition);
-            var fromOffset = ResolveStartOffset(topic, partition, partitionLog, options.Start);
+            var fromOffset = ResolveStartOffset(topic, partition, partitionLog, options);
 
             foreach (var envelope in partitionLog.Read(fromOffset))
             {
@@ -101,15 +101,22 @@ internal sealed class LocalStreamConsumer<T>(LocalStreamHost host, string subscr
         }
     }
 
-    private long ResolveStartOffset(string topic, int partition, PartitionLog partitionLog, ReadStart start)
+    private long ResolveStartOffset(string topic, int partition, PartitionLog partitionLog, ReadOptions options)
     {
-        switch (start)
+        switch (options.Start)
         {
             case ReadStart.Earliest:
                 return partitionLog.EarliestRetainedOffset;
 
             case ReadStart.Latest:
                 return partitionLog.NextOffset;
+
+            case ReadStart.Offset:
+                return options.Offset;
+
+            case ReadStart.Timestamp:
+                return partitionLog.FindOffsetByTimestamp(options.Timestamp)
+                    ?? partitionLog.NextOffset;
 
             case ReadStart.Committed:
                 var committed = host.Subscriptions.GetCommittedOffset(SubscriptionId, topic, partition);
@@ -128,7 +135,7 @@ internal sealed class LocalStreamConsumer<T>(LocalStreamHost host, string subscr
                 return next;
 
             default:
-                throw new ArgumentOutOfRangeException(nameof(start));
+                throw new ArgumentOutOfRangeException(nameof(options));
         }
     }
 
