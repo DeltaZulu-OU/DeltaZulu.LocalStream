@@ -49,6 +49,25 @@ jobs:
           # Use 'recursive' to fetch nested submodules, or 'true' for just the top-level ones
           submodules: recursive
 
+      # A rebase/merge once dropped the submodule gitlink while keeping
+      # .gitmodules, which surfaced later as an opaque MSB3202 restore error.
+      # Fail fast with a clear message instead.
+      - name: Verify submodules
+        shell: bash
+        run: |
+          status=0
+          while read -r _ path; do
+            mode=$(git ls-tree HEAD "$path" | awk '{print $1}')
+            if [ "$mode" != "160000" ]; then
+              echo "::error::'$path' is declared in .gitmodules but its tree entry is '${mode:-absent}' instead of a 160000 gitlink. The submodule pointer was probably lost in a rebase or merge; re-add it with 'git add $path' from a clone that has the submodule checked out."
+              status=1
+            elif [ ! -e "$path/.git" ]; then
+              echo "::error::Submodule '$path' is not initialized in this checkout."
+              status=1
+            fi
+          done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+          exit $status
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
