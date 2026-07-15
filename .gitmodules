@@ -1,0 +1,3 @@
+[submodule "external/DeltaZulu.DurableBuffer"]
+	path = external/DeltaZulu.DurableBuffer
+	url = https://github.com/DeltaZulu-OU/DeltaZulu.DurableBuffer.git
