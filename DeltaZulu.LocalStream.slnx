@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/DeltaZulu.LocalStream/DeltaZulu.LocalStream.csproj" />
+  <Project Path="tests/DeltaZulu.LocalStream.Tests/DeltaZulu.LocalStream.Tests.csproj" />
+  <Project Path="external/DeltaZulu.DurableBuffer/src/DeltaZulu.DurableBuffer/DeltaZulu.DurableBuffer.csproj" />
+</Solution>
