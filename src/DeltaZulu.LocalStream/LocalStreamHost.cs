@@ -94,6 +94,64 @@ public sealed class LocalStreamHost : IAsyncDisposable
             : SubscriptionState.Active;
     }
 
+    public TopicMetrics GetTopicMetrics(string topic)
+    {
+        EnsureStarted();
+        var log = RequireTopic(topic);
+
+        var partitions = new List<PartitionMetrics>(log.PartitionCount);
+        for (var i = 0; i < log.PartitionCount; i++)
+        {
+            var partition = log.Partition(i);
+            partitions.Add(new PartitionMetrics(
+                i,
+                partition.EarliestRetainedOffset,
+                partition.NextOffset,
+                partition.SizeBytes,
+                partition.SegmentCount));
+        }
+
+        return new TopicMetrics(
+            topic,
+            partitions.Sum(p => p.NextOffset),
+            partitions.Sum(p => p.SizeBytes),
+            partitions.Sum(p => p.SegmentCount),
+            partitions);
+    }
+
+    public SubscriptionMetrics GetSubscriptionMetrics(string subscriptionId, string topic)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subscriptionId);
+        EnsureStarted();
+        var log = RequireTopic(topic);
+
+        var partitions = new List<SubscriptionPartitionMetrics>(log.PartitionCount);
+        for (var i = 0; i < log.PartitionCount; i++)
+        {
+            var partition = log.Partition(i);
+            var committed = _subscriptions!.GetCommittedOffset(subscriptionId, topic, i);
+            var nextToRead = committed == SubscriptionStore.NoCheckpoint
+                ? partition.EarliestRetainedOffset
+                : committed + 1;
+            var lag = Math.Max(0, partition.NextOffset - nextToRead);
+            partitions.Add(new SubscriptionPartitionMetrics(
+                i,
+                committed,
+                lag,
+                GetSubscriptionState(subscriptionId, topic, i)));
+        }
+
+        var required = _options.Subscriptions
+            .Any(s => s.Id == subscriptionId && s.Topic == topic && s.Required);
+
+        return new SubscriptionMetrics(
+            subscriptionId,
+            topic,
+            required,
+            partitions.Sum(p => p.LagRecords),
+            partitions);
+    }
+
     public ValueTask DisposeAsync()
     {
         _started = false;

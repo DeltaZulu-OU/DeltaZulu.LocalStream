@@ -64,6 +64,28 @@ internal sealed class PartitionLog
         }
     }
 
+    public long SizeBytes
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _segments.Sum(s => s.SizeBytes);
+            }
+        }
+    }
+
+    public int SegmentCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _segments.Count;
+            }
+        }
+    }
+
     public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, JsonElement payload)
     {
         lock (_sync)
