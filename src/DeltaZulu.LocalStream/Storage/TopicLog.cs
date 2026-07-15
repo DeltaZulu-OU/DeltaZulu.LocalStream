@@ -42,6 +42,44 @@ internal sealed class TopicLog
         return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payload);
     }
 
+    /// <summary>
+    /// Routes and appends a batch. Records are grouped per partition in input
+    /// order and each partition group is written with one durable flush per
+    /// touched segment. Returns (partition, offset) aligned with the input.
+    /// </summary>
+    public IReadOnlyList<(int Partition, long Offset)> AppendBatch(
+        IReadOnlyList<PartitionLog.PendingRecord> records,
+        AppendOptions? options)
+    {
+        var routed = new int[records.Count];
+        var groups = new Dictionary<int, List<int>>();
+        for (var i = 0; i < records.Count; i++)
+        {
+            var partition = SelectPartition(options);
+            routed[i] = partition;
+            if (!groups.TryGetValue(partition, out var indexes))
+            {
+                indexes = [];
+                groups[partition] = indexes;
+            }
+
+            indexes.Add(i);
+        }
+
+        var positions = new (int Partition, long Offset)[records.Count];
+        foreach (var (partition, indexes) in groups)
+        {
+            var group = indexes.Select(i => records[i]).ToList();
+            var firstOffset = _partitions[partition].AppendMany(group);
+            for (var i = 0; i < indexes.Count; i++)
+            {
+                positions[indexes[i]] = (partition, firstOffset + i);
+            }
+        }
+
+        return positions;
+    }
+
     public void ApplyRetention(DateTimeOffset nowUtc)
     {
         foreach (var partition in _partitions)
