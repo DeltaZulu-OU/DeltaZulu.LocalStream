@@ -56,7 +56,17 @@ internal sealed class TopicLog
         out int partition)
     {
         partition = SelectPartition(options);
-        return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payloadJson);
+        try
+        {
+            return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payloadJson);
+        }
+        finally
+        {
+            // Appends change the on-disk size used by the topic hard-cap check.
+            // Invalidate even if storage throws because an append may have written
+            // part of its data before the failure is surfaced.
+            _totalSizeBytesDirty = true;
+        }
     }
 
     /// <summary>
@@ -84,14 +94,23 @@ internal sealed class TopicLog
         }
 
         var positions = new (int Partition, long Offset)[records.Count];
-        foreach (var (partition, indexes) in groups)
+        try
         {
-            var group = indexes.Select(i => records[i]).ToList();
-            var firstOffset = _partitions[partition].AppendMany(group);
-            for (var i = 0; i < indexes.Count; i++)
+            foreach (var (partition, indexes) in groups)
             {
-                positions[indexes[i]] = (partition, firstOffset + i);
+                var group = indexes.Select(i => records[i]).ToList();
+                var firstOffset = _partitions[partition].AppendMany(group);
+                for (var i = 0; i < indexes.Count; i++)
+                {
+                    positions[indexes[i]] = (partition, firstOffset + i);
+                }
             }
+        }
+        finally
+        {
+            // A batch can touch one or more partitions, including partially
+            // completed batches that fail with an I/O exception.
+            _totalSizeBytesDirty = true;
         }
 
         return positions;
