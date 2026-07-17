@@ -27,27 +27,9 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             });
         }
 
-        byte[] payloadBytes;
-        try
+        if (!TrySerializePayload(log, topic, record, out var payloadBytes, out var failure))
         {
-            payloadBytes = JsonSerializer.SerializeToUtf8Bytes(record);
-        }
-        catch (NotSupportedException exception)
-        {
-            return ValueTask.FromResult(new AppendResult
-            {
-                Status = AppendStatus.FailedSerialization,
-                Reason = exception.Message,
-            });
-        }
-
-        if (log.Options.MaxRecordBytes is { } maxRecordBytes && payloadBytes.Length > maxRecordBytes)
-        {
-            return ValueTask.FromResult(new AppendResult
-            {
-                Status = AppendStatus.RejectedRecordTooLarge,
-                Reason = $"Serialized payload is {payloadBytes.Length} bytes; topic '{topic}' allows {maxRecordBytes}.",
-            });
+            return ValueTask.FromResult(failure);
         }
 
         if (log.Options.MaxTotalBytes is { } maxTotalBytes && log.TotalSizeBytes >= maxTotalBytes)
@@ -60,16 +42,10 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             });
         }
 
-        JsonElement payload;
-        using (var document = JsonDocument.Parse(payloadBytes))
-        {
-            payload = document.RootElement.Clone();
-        }
-
         var eventId = options?.EventId ?? Guid.NewGuid().ToString("N");
         try
         {
-            var offset = log.Append(eventId, DateTimeOffset.UtcNow, options, payload, out var partition);
+            var offset = log.Append(eventId, DateTimeOffset.UtcNow, options, payloadBytes, out var partition);
             return ValueTask.FromResult(new AppendResult
             {
                 Status = AppendStatus.Appended,
@@ -128,35 +104,10 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
         var pending = new List<Storage.PartitionLog.PendingRecord>(records.Count);
         for (var i = 0; i < records.Count; i++)
         {
-            byte[] payloadBytes;
-            try
+            if (!TrySerializePayload(log, topic, records[i], out var payloadBytes, out var failure))
             {
-                payloadBytes = JsonSerializer.SerializeToUtf8Bytes(records[i]);
-            }
-            catch (NotSupportedException exception)
-            {
-                results[i] = new AppendResult
-                {
-                    Status = AppendStatus.FailedSerialization,
-                    Reason = exception.Message,
-                };
+                results[i] = failure;
                 continue;
-            }
-
-            if (log.Options.MaxRecordBytes is { } maxRecordBytes && payloadBytes.Length > maxRecordBytes)
-            {
-                results[i] = new AppendResult
-                {
-                    Status = AppendStatus.RejectedRecordTooLarge,
-                    Reason = $"Serialized payload is {payloadBytes.Length} bytes; topic '{topic}' allows {maxRecordBytes}.",
-                };
-                continue;
-            }
-
-            JsonElement payload;
-            using (var document = JsonDocument.Parse(payloadBytes))
-            {
-                payload = document.RootElement.Clone();
             }
 
             pendingIndexes.Add(i);
@@ -164,7 +115,7 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
                 Guid.NewGuid().ToString("N"),
                 publishedUtc,
                 options?.Headers,
-                payload));
+                payloadBytes));
         }
 
         try
@@ -193,6 +144,47 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
         }
 
         return ValueTask.FromResult<IReadOnlyList<AppendResult>>(results);
+    }
+
+    /// <summary>
+    /// Serializes a record's payload and enforces the per-record size cap.
+    /// Returns false with a populated <paramref name="failure"/> on a
+    /// serialization error or an oversized payload.
+    /// </summary>
+    private static bool TrySerializePayload(
+        Storage.TopicLog log,
+        string topic,
+        T record,
+        out byte[] payload,
+        out AppendResult failure)
+    {
+        try
+        {
+            payload = JsonSerializer.SerializeToUtf8Bytes(record);
+        }
+        catch (NotSupportedException exception)
+        {
+            payload = [];
+            failure = new AppendResult
+            {
+                Status = AppendStatus.FailedSerialization,
+                Reason = exception.Message,
+            };
+            return false;
+        }
+
+        if (log.Options.MaxRecordBytes is { } maxRecordBytes && payload.Length > maxRecordBytes)
+        {
+            failure = new AppendResult
+            {
+                Status = AppendStatus.RejectedRecordTooLarge,
+                Reason = $"Serialized payload is {payload.Length} bytes; topic '{topic}' allows {maxRecordBytes}.",
+            };
+            return false;
+        }
+
+        failure = null!;
+        return true;
     }
 
     private static ValueTask<IReadOnlyList<AppendResult>> Fill(AppendResult[] results, AppendResult value)

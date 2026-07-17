@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 
 namespace DeltaZulu.LocalStream.Storage;
 
@@ -35,11 +34,11 @@ internal sealed class TopicLog
         string eventId,
         DateTimeOffset publishedUtc,
         AppendOptions? options,
-        JsonElement payload,
+        byte[] payloadJson,
         out int partition)
     {
         partition = SelectPartition(options);
-        return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payload);
+        return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payloadJson);
     }
 
     /// <summary>
