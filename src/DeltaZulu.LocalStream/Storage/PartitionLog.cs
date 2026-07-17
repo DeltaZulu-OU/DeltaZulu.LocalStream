@@ -1,5 +1,5 @@
+using System.Buffers;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
 
 namespace DeltaZulu.LocalStream.Storage;
@@ -12,6 +12,7 @@ namespace DeltaZulu.LocalStream.Storage;
 internal sealed class PartitionLog
 {
     private const string SegmentExtension = ".log";
+    private const int ReadBufferBytes = 64 * 1024;
 
     private readonly object _sync = new();
     private readonly string _segmentsDirectory;
@@ -90,10 +91,10 @@ internal sealed class PartitionLog
         string EventId,
         DateTimeOffset PublishedUtc,
         IReadOnlyDictionary<string, string>? Headers,
-        JsonElement Payload);
+        byte[] PayloadJson);
 
-    public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, JsonElement payload) =>
-        AppendMany([new PendingRecord(eventId, publishedUtc, headers, payload)]);
+    public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, byte[] payloadJson) =>
+        AppendMany([new PendingRecord(eventId, publishedUtc, headers, payloadJson)]);
 
     /// <summary>
     /// Appends records consecutively with one durable flush per touched
@@ -111,16 +112,7 @@ internal sealed class PartitionLog
             {
                 foreach (var record in records)
                 {
-                    var envelope = new RecordEnvelope
-                    {
-                        Offset = _nextOffset,
-                        EventId = record.EventId,
-                        PublishedUtc = record.PublishedUtc,
-                        Headers = record.Headers is null ? [] : new Dictionary<string, string>(record.Headers),
-                        Payload = record.Payload,
-                    };
-
-                    var line = FrameLine(JsonSerializer.SerializeToUtf8Bytes(envelope));
+                    var line = FrameLine(SerializeEnvelope(_nextOffset, record));
 
                     var segment = ActiveSegmentForWrite();
                     if (!ReferenceEquals(segment, current))
@@ -166,13 +158,8 @@ internal sealed class PartitionLog
                 continue;
             }
 
-            foreach (var envelope in ReadSegment(segment.Path))
+            foreach (var envelope in ReadSegmentFrom(segment.Path, segment.BaseOffset, fromOffset, endOffsetExclusive))
             {
-                if (envelope.Offset < fromOffset || envelope.Offset >= endOffsetExclusive)
-                {
-                    continue;
-                }
-
                 yield return envelope;
             }
         }
@@ -284,10 +271,15 @@ internal sealed class PartitionLog
                 continue;
             }
 
-            var (envelopes, validBytes) = ScanSegment(segment.Path);
+            var scan = ScanSegment(segment.Path);
+            if (scan is not { } result)
+            {
+                continue;
+            }
+
             segments++;
-            validRecords += envelopes.Count;
-            garbageBytes += fileLength - validBytes;
+            validRecords += result.RecordCount;
+            garbageBytes += fileLength - result.ValidBytes;
         }
 
         return (segments, validRecords, garbageBytes);
@@ -323,124 +315,305 @@ internal sealed class PartitionLog
                 CultureInfo.InvariantCulture);
             var segment = new Segment(baseOffset, path);
 
-            var (envelopes, validBytes) = ScanSegment(path);
-            foreach (var envelope in envelopes)
-            {
-                segment.RecordCount++;
-                segment.NewestRecordUtc = envelope.PublishedUtc;
-            }
+            var scan = ScanSegment(path) ?? (0L, default, 0L);
+            segment.RecordCount = scan.RecordCount;
+            segment.NewestRecordUtc = scan.NewestUtc;
 
             // Crash during append can leave a torn tail; truncate to the last
             // valid framed record so the segment is appendable again.
-            if (validBytes < new FileInfo(path).Length)
+            if (scan.ValidBytes < new FileInfo(path).Length)
             {
                 using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
-                stream.SetLength(validBytes);
+                stream.SetLength(scan.ValidBytes);
             }
 
-            segment.SizeBytes = validBytes;
+            segment.SizeBytes = scan.ValidBytes;
             _segments.Add(segment);
             _nextOffset = segment.BaseOffset + segment.RecordCount;
         }
     }
 
-    private static byte[] FrameLine(byte[] json)
+    /// <summary>
+    /// Serializes one envelope, embedding the already-serialized payload bytes
+    /// verbatim instead of re-parsing and re-serializing them.
+    /// </summary>
+    private static byte[] SerializeEnvelope(long offset, in PendingRecord record)
     {
+        var buffer = new ArrayBufferWriter<byte>(record.PayloadJson.Length + 128);
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("offset", offset);
+            writer.WriteString("eventId", record.EventId);
+            writer.WriteString("publishedUtc", record.PublishedUtc);
+            writer.WritePropertyName("headers");
+            writer.WriteStartObject();
+            if (record.Headers is { } headers)
+            {
+                foreach (var (key, value) in headers)
+                {
+                    writer.WriteString(key, value);
+                }
+            }
+
+            writer.WriteEndObject();
+            writer.WritePropertyName("payload");
+            writer.WriteRawValue(record.PayloadJson, skipInputValidation: true);
+            writer.WriteEndObject();
+        }
+
+        return buffer.WrittenSpan.ToArray();
+    }
+
+    private static byte[] FrameLine(ReadOnlySpan<byte> json)
+    {
+        // Frame: 8 hex CRC chars, space, JSON, newline.
         var crc = Crc32.Compute(json);
-        var prefix = Encoding.ASCII.GetBytes(crc.ToString("x8", CultureInfo.InvariantCulture) + " ");
-        var line = new byte[prefix.Length + json.Length + 1];
-        prefix.CopyTo(line, 0);
-        json.CopyTo(line, prefix.Length);
+        var line = new byte[8 + 1 + json.Length + 1];
+        var crcText = crc.ToString("x8", CultureInfo.InvariantCulture);
+        for (var i = 0; i < 8; i++)
+        {
+            line[i] = (byte)crcText[i];
+        }
+
+        line[8] = (byte)' ';
+        json.CopyTo(line.AsSpan(9));
         line[^1] = (byte)'\n';
         return line;
     }
 
-    private static IEnumerable<RecordEnvelope> ReadSegment(string path)
+    /// <summary>
+    /// Streams a segment from <paramref name="baseOffset"/>, yielding records in
+    /// <c>[fromOffset, endOffsetExclusive)</c>. Records before
+    /// <paramref name="fromOffset"/> are skipped by line position without being
+    /// CRC-checked or deserialized, so a caught-up reader pays only for new data.
+    /// </summary>
+    private static IEnumerable<RecordEnvelope> ReadSegmentFrom(
+        string path,
+        long baseOffset,
+        long fromOffset,
+        long endOffsetExclusive)
     {
-        byte[] bytes;
-        try
-        {
-            bytes = File.ReadAllBytes(path);
-        }
-        catch (FileNotFoundException)
+        var stream = TryOpenRead(path);
+        if (stream is null)
         {
             // Deleted by retention between snapshot and read; its records are gone.
             yield break;
         }
 
-        foreach (var (envelope, _) in ParseLines(bytes))
+        using (stream)
         {
-            yield return envelope;
-        }
-    }
+            var reader = new FrameReader(stream);
+            for (var offset = baseOffset; offset < endOffsetExclusive; offset++)
+            {
+                var skip = offset < fromOffset;
+                var line = reader.ReadLine(skip);
+                if (line is null)
+                {
+                    yield break;
+                }
 
-    private static (IReadOnlyList<RecordEnvelope> Envelopes, long ValidBytes) ScanSegment(string path)
-    {
-        var bytes = File.ReadAllBytes(path);
-        var envelopes = new List<RecordEnvelope>();
-        var end = 0L;
-        foreach (var (envelope, lineEnd) in ParseLines(bytes))
-        {
-            envelopes.Add(envelope);
-            end = lineEnd;
-        }
+                if (skip)
+                {
+                    continue;
+                }
 
-        return (envelopes, end);
+                if (!TryParseFrame(line, out var envelope))
+                {
+                    yield break;
+                }
+
+                yield return envelope;
+            }
+        }
     }
 
     /// <summary>
-    /// Parses framed lines, stopping at the first torn or corrupt line. Yields
-    /// each envelope with the byte position just past its trailing newline.
+    /// Streams a whole segment, counting valid framed records and reporting the
+    /// byte offset just past the last one. Returns null if the file is gone.
     /// </summary>
-    private static IEnumerable<(RecordEnvelope Envelope, long LineEnd)> ParseLines(byte[] bytes)
+    private static (long RecordCount, DateTimeOffset NewestUtc, long ValidBytes)? ScanSegment(string path)
     {
-        var position = 0;
-        while (position < bytes.Length)
+        var stream = TryOpenRead(path);
+        if (stream is null)
         {
-            var newline = Array.IndexOf(bytes, (byte)'\n', position);
-            if (newline < 0)
+            return null;
+        }
+
+        using (stream)
+        {
+            var reader = new FrameReader(stream);
+            var count = 0L;
+            var newest = default(DateTimeOffset);
+            var validBytes = 0L;
+            while (reader.ReadLine(skip: false) is { } line)
             {
-                yield break;
+                if (!TryParseFrame(line, out var envelope))
+                {
+                    break;
+                }
+
+                count++;
+                newest = envelope.PublishedUtc;
+                validBytes = reader.LineEnd;
             }
 
-            // Frame: 8 hex chars, space, JSON.
-            const int JsonStartRelative = 9;
-            var jsonStart = position + JsonStartRelative;
-            if (newline <= jsonStart)
+            return (count, newest, validBytes);
+        }
+    }
+
+    private static FileStream? TryOpenRead(string path)
+    {
+        try
+        {
+            return new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite,
+                ReadBufferBytes,
+                FileOptions.SequentialScan);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryParseFrame(ReadOnlySpan<byte> line, out RecordEnvelope envelope)
+    {
+        envelope = null!;
+
+        // Frame: 8 hex chars, space, at least one JSON byte.
+        if (line.Length < 10 || line[8] != (byte)' ')
+        {
+            return false;
+        }
+
+        Span<char> hex = stackalloc char[8];
+        for (var i = 0; i < 8; i++)
+        {
+            hex[i] = (char)line[i];
+        }
+
+        if (!uint.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var expectedCrc))
+        {
+            return false;
+        }
+
+        var json = line[9..];
+        if (Crc32.Compute(json) != expectedCrc)
+        {
+            return false;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<RecordEnvelope>(json);
+            if (parsed is null)
             {
-                yield break;
+                return false;
             }
 
-            var crcText = Encoding.ASCII.GetString(bytes, position, 8);
-            if (!uint.TryParse(crcText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var expectedCrc)
-                || bytes[position + 8] != (byte)' ')
+            envelope = parsed;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reads newline-framed lines from a stream one at a time with a bounded
+    /// buffer, so a segment is never loaded whole. Skipped lines are consumed
+    /// without materializing their bytes.
+    /// </summary>
+    private sealed class FrameReader(Stream stream)
+    {
+        private readonly byte[] _buffer = new byte[ReadBufferBytes];
+        private int _start;
+        private int _end;
+        private long _bytesRead;
+        private bool _eof;
+
+        /// <summary>Absolute byte offset just past the last line returned by <see cref="ReadLine"/>.</summary>
+        public long LineEnd { get; private set; }
+
+        /// <summary>
+        /// Consumes the next newline-terminated line, returning its bytes without
+        /// the newline (or an empty array when <paramref name="skip"/> is true).
+        /// Returns null at end of file or on a torn, unterminated tail.
+        /// </summary>
+        public byte[]? ReadLine(bool skip)
+        {
+            List<byte>? spillover = null;
+            while (true)
             {
-                yield break;
+                if (_start < _end)
+                {
+                    var newline = Array.IndexOf(_buffer, (byte)'\n', _start, _end - _start);
+                    if (newline >= 0)
+                    {
+                        byte[] line;
+                        if (skip)
+                        {
+                            line = [];
+                        }
+                        else if (spillover is null)
+                        {
+                            line = _buffer[_start..newline];
+                        }
+                        else
+                        {
+                            spillover.AddRange(_buffer.AsSpan(_start, newline - _start));
+                            line = [.. spillover];
+                        }
+
+                        _start = newline + 1;
+                        LineEnd = _bytesRead - (_end - _start);
+                        return line;
+                    }
+
+                    // No newline in the buffered region: keep the tail (unless
+                    // skipping) and pull in the next chunk.
+                    if (!skip && _end > _start)
+                    {
+                        (spillover ??= []).AddRange(_buffer.AsSpan(_start, _end - _start));
+                    }
+
+                    _start = _end;
+                }
+
+                if (!Refill())
+                {
+                    // End of file with no terminating newline: torn tail.
+                    return null;
+                }
+            }
+        }
+
+        private bool Refill()
+        {
+            if (_eof)
+            {
+                return false;
             }
 
-            var json = bytes.AsSpan(jsonStart, newline - jsonStart);
-            if (Crc32.Compute(json) != expectedCrc)
+            _start = 0;
+            _end = stream.Read(_buffer, 0, _buffer.Length);
+            _bytesRead += _end;
+            if (_end == 0)
             {
-                yield break;
+                _eof = true;
+                return false;
             }
 
-            RecordEnvelope? envelope;
-            try
-            {
-                envelope = JsonSerializer.Deserialize<RecordEnvelope>(json);
-            }
-            catch (JsonException)
-            {
-                yield break;
-            }
-
-            if (envelope is null)
-            {
-                yield break;
-            }
-
-            position = newline + 1;
-            yield return (envelope, position);
+            return true;
         }
     }
 }
