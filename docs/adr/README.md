@@ -15,6 +15,12 @@ ADRs prevent regressions and maintain institutional knowledge about *why* code i
 | [0002](0002-retention-complexity-optimization.md) | Retention Complexity | Fix O(n²) Sum loop → O(n) | Accepted |
 | [0003](0003-event-driven-memoization-for-metrics.md) | Event-Driven Memoization | Cache metrics with explicit invalidation | Accepted |
 | [0004](0004-payload-serialization-without-round-trip.md) | Payload Serialization | Avoid JSON re-parse and clone | Accepted |
+| [0005](0005-durability-stream-vs-queue-boundary.md) | DurableBuffer Boundary | LocalStream vs DurableBuffer separation | Accepted |
+| [0006](0006-delivery-semantics-at-least-once.md) | Delivery Semantics | At-least-once, not exactly-once | Accepted |
+| [0007](0007-record-identity-stream-coordinates.md) | Record Identity | EventId and stream coordinates | Accepted |
+| [0008](0008-retention-independence.md) | Retention Independence | Retention by policy, not subscription progress | Accepted |
+| [0009](0009-naming-conventions.md) | Naming Conventions | Topic, subscription, processor naming | Accepted |
+| [0010](0010-processor-model-local-scope.md) | Processor Model | Local processors, not distributed | Accepted |
 
 ## Reading Guide
 
@@ -22,11 +28,21 @@ ADRs prevent regressions and maintain institutional knowledge about *why* code i
 - Start with [0000-optimization-philosophy.md](0000-optimization-philosophy.md) — it explains the overall philosophy and decision matrix
 
 **Interested in a specific area?**
+
+*Performance optimizations:*
 - Performance concern? → [0000](0000-optimization-philosophy.md) (decision matrix)
 - Memory pressure? → [0001](0001-streaming-segment-reads.md)
 - Retention slow? → [0002](0002-retention-complexity-optimization.md)
 - Metrics expensive? → [0003](0003-event-driven-memoization-for-metrics.md)
 - Append throughput? → [0004](0004-payload-serialization-without-round-trip.md)
+
+*Architecture and design:*
+- Library boundary decisions? → [0005](0005-durability-stream-vs-queue-boundary.md)
+- Delivery guarantees? → [0006](0006-delivery-semantics-at-least-once.md)
+- Record structure? → [0007](0007-record-identity-stream-coordinates.md)
+- Retention policy? → [0008](0008-retention-independence.md)
+- Naming topics/subscriptions? → [0009](0009-naming-conventions.md)
+- Building a processor? → [0010](0010-processor-model-local-scope.md)
 
 **Maintenance task?**
 - See ADR-0000's "Review Checklist for Future Optimizations" before adding new optimizations
@@ -103,8 +119,16 @@ See [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/archi
 5. **Implement** the decision
 6. **Maintain** — keep the ADR accurate as the system evolves
 
+## ADR Categories
+
+**Performance & Implementation (0001–0004):**
+Optimize hot paths and eliminate wasteful operations without changing the architecture. See [ADR-0000](0000-optimization-philosophy.md) for the decision matrix.
+
+**Architecture & Design (0005–0010):**
+Decisions about library boundaries, delivery guarantees, record structure, retention, naming, and processor scope. These are strategic choices that rarely change.
+
 ## Related Reading
 
-- [LOCAL_STREAM_ARCHITECTURE.md](../LOCAL_STREAM_ARCHITECTURE.md) — Overall system design
+- [LOCAL_STREAM_ARCHITECTURE.md](../LOCAL_STREAM_ARCHITECTURE.md) — Overall system design (historical context; architectural decisions now formalized as ADRs 0005–0010)
 - [README.md](../../README.md) — Usage guide and quick start
 - Git commit messages — Implementation details (grep for commit author and date in ADRs)
