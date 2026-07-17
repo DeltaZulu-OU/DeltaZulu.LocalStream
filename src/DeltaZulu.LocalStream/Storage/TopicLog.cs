@@ -7,6 +7,8 @@ internal sealed class TopicLog
 {
     private readonly PartitionLog[] _partitions;
     private int _roundRobin = -1;
+    private long _cachedTotalSizeBytes;
+    private bool _totalSizeBytesDirty = true;
 
     public TopicLog(string topicDirectory, TopicOptions options)
     {
@@ -26,7 +28,23 @@ internal sealed class TopicLog
 
     public int PartitionCount => _partitions.Length;
 
-    public long TotalSizeBytes => _partitions.Sum(p => p.SizeBytes);
+    /// <summary>
+    /// Total on-disk bytes across all partitions. Cached until invalidated by
+    /// retention. Avoids O(segments) summation on every append size check.
+    /// </summary>
+    public long TotalSizeBytes
+    {
+        get
+        {
+            if (_totalSizeBytesDirty)
+            {
+                _cachedTotalSizeBytes = _partitions.Sum(p => p.SizeBytes);
+                _totalSizeBytesDirty = false;
+            }
+
+            return _cachedTotalSizeBytes;
+        }
+    }
 
     public PartitionLog Partition(int index) => _partitions[index];
 
@@ -85,6 +103,9 @@ internal sealed class TopicLog
         {
             partition.ApplyRetention(Options.Retention, nowUtc);
         }
+
+        // Retention deletes segments, so invalidate the cached size.
+        _totalSizeBytesDirty = true;
     }
 
     private int SelectPartition(AppendOptions? options)
