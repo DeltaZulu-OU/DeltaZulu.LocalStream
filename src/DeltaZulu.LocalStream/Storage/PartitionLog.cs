@@ -20,6 +20,8 @@ internal sealed class PartitionLog
     private readonly List<Segment> _segments = [];
 
     private long _nextOffset;
+    private long? _cachedEarliestRetainedOffset;
+    private bool _earliestOffsetDirty = true;
 
     private sealed class Segment(long baseOffset, string path)
     {
@@ -51,7 +53,8 @@ internal sealed class PartitionLog
 
     /// <summary>
     /// Offset of the oldest record still on disk. Equals <see cref="NextOffset"/>
-    /// when the partition holds no records.
+    /// when the partition holds no records. Memoized and invalidated only on
+    /// retention or recovery to avoid O(segments) scan on every call.
     /// </summary>
     public long EarliestRetainedOffset
     {
@@ -59,8 +62,14 @@ internal sealed class PartitionLog
         {
             lock (_sync)
             {
-                var first = _segments.FirstOrDefault(s => s.RecordCount > 0);
-                return first?.BaseOffset ?? _nextOffset;
+                if (_earliestOffsetDirty)
+                {
+                    var first = _segments.FirstOrDefault(s => s.RecordCount > 0);
+                    _cachedEarliestRetainedOffset = first?.BaseOffset ?? _nextOffset;
+                    _earliestOffsetDirty = false;
+                }
+
+                return _cachedEarliestRetainedOffset ?? _nextOffset;
             }
         }
     }
@@ -200,6 +209,8 @@ internal sealed class PartitionLog
                 File.Delete(oldest.Path);
                 _segments.RemoveAt(0);
             }
+
+            _earliestOffsetDirty = true;
         }
     }
 
@@ -344,6 +355,9 @@ internal sealed class PartitionLog
             _segments.Add(segment);
             _nextOffset = segment.BaseOffset + segment.RecordCount;
         }
+
+        // Recovery rebuilds the segment list, so invalidate any cached earliest offset.
+        _earliestOffsetDirty = true;
     }
 
     /// <summary>
