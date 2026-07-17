@@ -65,6 +65,11 @@ internal sealed class PartitionLog
         }
     }
 
+    /// <summary>
+    /// Total on-disk bytes across all segments. O(segments), cached in a
+    /// property to avoid repeated enumeration. If hot, consider caching
+    /// in a field and invalidating on changes.
+    /// </summary>
     public long SizeBytes
     {
         get
@@ -187,9 +192,11 @@ internal sealed class PartitionLog
     {
         lock (_sync)
         {
-            while (_segments.Count > 1 && ViolatesPolicy(_segments, retention, nowUtc))
+            var totalBytes = _segments.Sum(s => s.SizeBytes);
+            while (_segments.Count > 1 && ViolatesPolicy(_segments, retention, nowUtc, totalBytes))
             {
                 var oldest = _segments[0];
+                totalBytes -= oldest.SizeBytes;
                 File.Delete(oldest.Path);
                 _segments.RemoveAt(0);
             }
@@ -207,15 +214,17 @@ internal sealed class PartitionLog
         lock (_sync)
         {
             var remaining = new List<Segment>(_segments);
+            var totalBytes = remaining.Sum(s => s.SizeBytes);
             var segments = 0;
             var bytes = 0L;
             var records = 0L;
-            while (remaining.Count > 1 && ViolatesPolicy(remaining, retention, nowUtc))
+            while (remaining.Count > 1 && ViolatesPolicy(remaining, retention, nowUtc, totalBytes))
             {
                 var oldest = remaining[0];
                 segments++;
                 bytes += oldest.SizeBytes;
                 records += oldest.RecordCount;
+                totalBytes -= oldest.SizeBytes;
                 remaining.RemoveAt(0);
             }
 
@@ -224,11 +233,15 @@ internal sealed class PartitionLog
         }
     }
 
-    private static bool ViolatesPolicy(List<Segment> segments, RetentionOptions retention, DateTimeOffset nowUtc)
+    private static bool ViolatesPolicy(
+        List<Segment> segments,
+        RetentionOptions retention,
+        DateTimeOffset nowUtc,
+        long totalBytes)
     {
         var oldest = segments[0];
 
-        if (retention.MaxBytes is { } maxBytes && segments.Sum(s => s.SizeBytes) > maxBytes)
+        if (retention.MaxBytes is { } maxBytes && totalBytes > maxBytes)
         {
             return true;
         }
