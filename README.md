@@ -2,16 +2,14 @@
 
 A local, durable, append-only stream log for .NET — Kafka/Pulsar/Flink-inspired, not Kafka-compatible. Topics, partitions, monotonic offsets, named subscriptions with durable checkpoints, replay, and policy-based retention, all without an external broker.
 
-See [docs/LOCAL_STREAM_ARCHITECTURE.md](docs/LOCAL_STREAM_ARCHITECTURE.md) for the full architecture, and [DeltaZulu.DurableBuffer](https://github.com/DeltaZulu-OU/DeltaZulu.DurableBuffer) (included as a git submodule under `external/`) for the sibling durable queue primitive used at service edges.
+See [docs/LOCAL_STREAM_ARCHITECTURE.md](docs/LOCAL_STREAM_ARCHITECTURE.md) for the full architecture. [DeltaZulu.DurableBuffer](https://github.com/DeltaZulu-OU/DeltaZulu.DurableBuffer) is a sibling durable queue primitive that can be used at service edges, but it is not a required dependency of this package.
 
 ## Getting started
 
-Clone with submodules:
+Clone the repository:
 
 ```bash
-git clone --recurse-submodules https://github.com/DeltaZulu-OU/DeltaZulu.LocalStream.git
-# or, in an existing clone:
-git submodule update --init --recursive
+git clone https://github.com/DeltaZulu-OU/DeltaZulu.LocalStream.git
 ```
 
 Build and test (requires the .NET 10 SDK):

@@ -21,6 +21,7 @@ ADRs prevent regressions and maintain institutional knowledge about *why* code i
 | [0008](0008-retention-independence.md) | Retention Independence | Retention by policy, not subscription progress | Accepted |
 | [0009](0009-naming-conventions.md) | Naming Conventions | Topic, subscription, processor naming | Accepted |
 | [0010](0010-processor-model-local-scope.md) | Processor Model | Local processors, not distributed | Accepted |
+| [0011](0011-durablebuffer-optional-edge-integration.md) | Optional DurableBuffer Integration | DurableBuffer at edges, not as a required dependency | Accepted |
 
 ## Reading Guide
 
@@ -43,6 +44,7 @@ ADRs prevent regressions and maintain institutional knowledge about *why* code i
 - Retention policy? → [0008](0008-retention-independence.md)
 - Naming topics/subscriptions? → [0009](0009-naming-conventions.md)
 - Building a processor? → [0010](0010-processor-model-local-scope.md)
+- Deciding whether to depend on DurableBuffer? → [0011](0011-durablebuffer-optional-edge-integration.md)
 
 **Maintenance task?**
 - See ADR-0000's "Review Checklist for Future Optimizations" before adding new optimizations
@@ -124,8 +126,8 @@ See [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/archi
 **Performance & Implementation (0001–0004):**
 Optimize hot paths and eliminate wasteful operations without changing the architecture. See [ADR-0000](0000-optimization-philosophy.md) for the decision matrix.
 
-**Architecture & Design (0005–0010):**
-Decisions about library boundaries, delivery guarantees, record structure, retention, naming, and processor scope. These are strategic choices that rarely change.
+**Architecture & Design (0005–0011):**
+Decisions about library boundaries, delivery guarantees, record structure, retention, naming, processor scope, and optional edge integrations. These are strategic choices that rarely change.
 
 ## Related Reading
 

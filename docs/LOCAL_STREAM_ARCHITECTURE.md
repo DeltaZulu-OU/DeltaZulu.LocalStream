@@ -122,7 +122,7 @@ DeltaZulu.LocalStream
   = local stream log with topics, partitions, offsets, subscriptions, replay, retention, and processors
 ```
 
-DurableBuffer may still be used at service edges or as an implementation utility, but LocalStream must not be forced through DurableBuffer’s delete-on-complete queue lifecycle. Kafka-like semantics require retention independent of consumer completion.
+DurableBuffer may still be used at service edges, but it is not a required LocalStream dependency and LocalStream must not be forced through DurableBuffer’s delete-on-complete queue lifecycle. Kafka-like semantics require retention independent of consumer completion. See [ADR-0011](adr/0011-durablebuffer-optional-edge-integration.md) for the explicit dependency decision.
 
 ## Goals
 
@@ -585,7 +585,7 @@ LocalStream is the local substrate that allows these branches to read independen
 
 DurableBuffer should remain a simple queue/buffer library. It has a catalog-backed queue lifecycle: records are written, sealed, added to a catalog, dispatched into a bounded channel, then completed, released, or dead-lettered by the consumer.
 
-LocalStream should not reuse DurableBuffer’s delete-on-complete model for topic storage, because stream retention is not the same as queue completion.
+LocalStream should not reuse DurableBuffer’s delete-on-complete model for topic storage, because stream retention is not the same as queue completion. LocalStream therefore has no required compile-time DurableBuffer dependency; DurableBuffer integrations should be optional edge adapters. This is formalized in [ADR-0011](adr/0011-durablebuffer-optional-edge-integration.md).
 
 However, DurableBuffer remains useful for:
 
@@ -603,7 +603,7 @@ Those are useful for service-local queue health, but LocalStream still needs its
 
 ## Backpressure
 
-Backpressure is primarily handled by DurableBuffer, but it must be explicitly configured and tuned by the using library to match the expected workload and delivery guarantees.
+Backpressure is handled at the boundary where pressure occurs. LocalStream exposes stream-log pressure through retention, disk caps, lag, and subscription state; optional DurableBuffer edge queues can add dispatch-channel and in-flight backpressure for ingress or external sinks. Each layer must be explicitly configured and tuned to match the expected workload and delivery guarantees.
 
 Backpressure should exist at several levels:
 
