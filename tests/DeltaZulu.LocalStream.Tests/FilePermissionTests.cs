@@ -23,6 +23,7 @@ public sealed class FilePermissionTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux | OperatingSystems.OSX)]
     public async Task SegmentCheckpointAndMetadataFiles_AreOwnerOnly_OnUnix()
     {
         if (OperatingSystem.IsWindows())
@@ -50,6 +51,7 @@ public sealed class FilePermissionTests
     }
 
     [TestMethod]
+    [OSCondition(OperatingSystems.Linux | OperatingSystems.OSX)]
     public async Task BatchAppendedSegments_AreOwnerOnly_OnUnix()
     {
         if (OperatingSystem.IsWindows())
