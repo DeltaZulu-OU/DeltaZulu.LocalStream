@@ -75,6 +75,11 @@ jobs:
           echo "package_version=$source_version" >> "$GITHUB_OUTPUT"
           echo "tag=v$source_version" >> "$GITHUB_OUTPUT"
 
+      - name: Verify the version moves forward
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/verify-version-moves-forward.sh DeltaZulu.LocalStream "${{ steps.version.outputs.package_version }}"
+
       - name: Create release tag for manual dispatch
         if: github.event_name == 'workflow_dispatch'
         env:
