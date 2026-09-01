@@ -114,6 +114,8 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             pending.Add(new Storage.PartitionLog.PendingRecord(
                 Guid.NewGuid().ToString("N"),
                 publishedUtc,
+                options?.Key,
+                options?.EventTimeUtc?.ToUniversalTime(),
                 options?.Headers,
                 payloadBytes));
         }

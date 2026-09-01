@@ -151,6 +151,8 @@ internal sealed class LocalStreamConsumer<T>(LocalStreamHost host, string subscr
             Offset = envelope.Offset,
             EventId = envelope.EventId,
             PublishedUtc = envelope.PublishedUtc,
+            Key = envelope.Key,
+            EventTimeUtc = envelope.EventTimeUtc,
             Headers = envelope.Headers,
             Payload = payload,
         };

@@ -12,6 +12,18 @@ public sealed class AppendOptions
     /// </summary>
     public string? PartitionKey { get; init; }
 
+    /// <summary>
+    /// Durable logical key carried by the record. Unlike <see cref="PartitionKey"/>,
+    /// this value is record metadata and is available after read and replay.
+    /// </summary>
+    public string? Key { get; init; }
+
+    /// <summary>
+    /// Optional event timestamp carried by the record. The value is normalized
+    /// to UTC before it is persisted and is never inferred from publish time.
+    /// </summary>
+    public DateTimeOffset? EventTimeUtc { get; init; }
+
     /// <summary>Caller-supplied stable event identity. Generated when omitted.</summary>
     public string? EventId { get; init; }
 

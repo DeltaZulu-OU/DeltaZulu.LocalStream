@@ -55,6 +55,60 @@ public sealed class AppendReadTests
     }
 
     [TestMethod]
+    public async Task Append_PersistsLogicalKeyAndUtcEventTime_AcrossRestart()
+    {
+        var dir = TestHost.NewStorageDir(TestContext);
+        var suppliedTime = new DateTimeOffset(2026, 8, 31, 14, 30, 0, TimeSpan.FromHours(2));
+
+        await using (var host = await TestHost.StartAsync(TestHost.Options(dir)))
+        {
+            var producer = host.CreateProducer<TestEvent>();
+            await producer.AppendAsync(
+                "agent.output",
+                new TestEvent("source", "event-time"),
+                new AppendOptions
+                {
+                    PartitionKey = "routing-key",
+                    Key = "logical-key",
+                    EventTimeUtc = suppliedTime,
+                });
+        }
+
+        await using (var host = await TestHost.StartAsync(TestHost.Options(dir)))
+        {
+            var consumer = host.CreateConsumer<TestEvent>("archive");
+            var records = await TestHost.ReadAllAsync(consumer, "agent.output");
+            Assert.HasCount(1, records);
+            var record = records[0];
+
+            Assert.AreEqual("logical-key", record.Key);
+            Assert.AreEqual(suppliedTime.ToUniversalTime(), record.EventTimeUtc);
+            Assert.AreEqual(TimeSpan.Zero, record.EventTimeUtc!.Value.Offset);
+        }
+    }
+
+    [TestMethod]
+    public async Task Append_WithoutQueryMetadata_DoesNotInferItFromRoutingOrPublishTime()
+    {
+        var dir = TestHost.NewStorageDir(TestContext);
+        await using var host = await TestHost.StartAsync(TestHost.Options(dir));
+        var producer = host.CreateProducer<TestEvent>();
+
+        await producer.AppendAsync(
+            "agent.output",
+            new TestEvent("source", "legacy-compatible"),
+            new AppendOptions { PartitionKey = "routing-only" });
+
+        var consumer = host.CreateConsumer<TestEvent>("archive");
+        var records = await TestHost.ReadAllAsync(consumer, "agent.output");
+        Assert.HasCount(1, records);
+        var record = records[0];
+
+        Assert.IsNull(record.Key);
+        Assert.IsNull(record.EventTimeUtc);
+    }
+
+    [TestMethod]
     public async Task Append_ToUnknownTopic_IsRejected()
     {
         var dir = TestHost.NewStorageDir(TestContext);

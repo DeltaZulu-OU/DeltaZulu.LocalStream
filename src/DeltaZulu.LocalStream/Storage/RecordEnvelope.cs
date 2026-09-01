@@ -15,6 +15,14 @@ internal sealed class RecordEnvelope
     [JsonPropertyName("publishedUtc")]
     public required DateTimeOffset PublishedUtc { get; init; }
 
+    [JsonPropertyName("key")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Key { get; init; }
+
+    [JsonPropertyName("eventTimeUtc")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? EventTimeUtc { get; init; }
+
     [JsonPropertyName("headers")]
     public Dictionary<string, string> Headers { get; init; } = [];
 

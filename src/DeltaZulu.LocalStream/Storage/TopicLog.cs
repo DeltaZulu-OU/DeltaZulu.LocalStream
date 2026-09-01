@@ -58,7 +58,13 @@ internal sealed class TopicLog
         partition = SelectPartition(options);
         try
         {
-            return _partitions[partition].Append(eventId, publishedUtc, options?.Headers, payloadJson);
+            return _partitions[partition].Append(
+                eventId,
+                publishedUtc,
+                options?.Key,
+                options?.EventTimeUtc?.ToUniversalTime(),
+                options?.Headers,
+                payloadJson);
         }
         finally
         {

@@ -13,6 +13,13 @@ public sealed record StreamRecord<T>
     public required long Offset { get; init; }
     public required string EventId { get; init; }
     public required DateTimeOffset PublishedUtc { get; init; }
+    /// <summary>Durable logical key, when supplied by the producer.</summary>
+    public string? Key { get; init; }
+    /// <summary>
+    /// Durable event timestamp, when supplied by the producer. A missing value
+    /// remains missing and is not replaced with <see cref="PublishedUtc"/>.
+    /// </summary>
+    public DateTimeOffset? EventTimeUtc { get; init; }
     public required IReadOnlyDictionary<string, string> Headers { get; init; }
     public required T Payload { get; init; }
 

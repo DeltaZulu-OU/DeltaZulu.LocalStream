@@ -104,11 +104,19 @@ internal sealed class PartitionLog
     internal readonly record struct PendingRecord(
         string EventId,
         DateTimeOffset PublishedUtc,
+        string? Key,
+        DateTimeOffset? EventTimeUtc,
         IReadOnlyDictionary<string, string>? Headers,
         byte[] PayloadJson);
 
-    public long Append(string eventId, DateTimeOffset publishedUtc, IReadOnlyDictionary<string, string>? headers, byte[] payloadJson) =>
-        AppendMany([new PendingRecord(eventId, publishedUtc, headers, payloadJson)]);
+    public long Append(
+        string eventId,
+        DateTimeOffset publishedUtc,
+        string? key,
+        DateTimeOffset? eventTimeUtc,
+        IReadOnlyDictionary<string, string>? headers,
+        byte[] payloadJson) =>
+        AppendMany([new PendingRecord(eventId, publishedUtc, key, eventTimeUtc, headers, payloadJson)]);
 
     /// <summary>
     /// Appends records consecutively with one durable flush per touched
@@ -373,6 +381,16 @@ internal sealed class PartitionLog
             writer.WriteNumber("offset", offset);
             writer.WriteString("eventId", record.EventId);
             writer.WriteString("publishedUtc", record.PublishedUtc);
+            if (record.Key is not null)
+            {
+                writer.WriteString("key", record.Key);
+            }
+
+            if (record.EventTimeUtc is { } eventTimeUtc)
+            {
+                writer.WriteString("eventTimeUtc", eventTimeUtc);
+            }
+
             writer.WritePropertyName("headers");
             writer.WriteStartObject();
             if (record.Headers is { } headers)
