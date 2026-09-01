@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DeltaZulu.LocalStream/DeltaZulu.LocalStream.csproj" />
+    <Project Path="src/DeltaZulu.LocalStream.Query/DeltaZulu.LocalStream.Query.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DeltaZulu.LocalStream.Tests/DeltaZulu.LocalStream.Tests.csproj" />
+    <Project Path="tests/DeltaZulu.LocalStream.Query.Tests/DeltaZulu.LocalStream.Query.Tests.csproj" />
   </Folder>
 </Solution>

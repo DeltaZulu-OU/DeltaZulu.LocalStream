@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>DeltaZulu.LocalStream.Query</RootNamespace>
+    <AssemblyName>DeltaZulu.LocalStream.Query</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>DeltaZulu.LocalStream.Query</PackageId>
+    <Title>DeltaZulu Local Stream Query</Title>
+    <Description>Deterministic stream-query planning and runtime primitives for DeltaZulu Local Stream.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DeltaZulu.LocalStream/DeltaZulu.LocalStream.csproj" />
+  </ItemGroup>
+</Project>
