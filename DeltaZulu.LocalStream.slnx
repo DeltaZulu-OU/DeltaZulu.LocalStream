@@ -2,9 +2,11 @@
   <Folder Name="/src/">
     <Project Path="src/DeltaZulu.LocalStream/DeltaZulu.LocalStream.csproj" />
     <Project Path="src/DeltaZulu.LocalStream.Query/DeltaZulu.LocalStream.Query.csproj" />
+    <Project Path="src/DeltaZulu.LocalStream.Query.LiteDB/DeltaZulu.LocalStream.Query.LiteDB.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DeltaZulu.LocalStream.Tests/DeltaZulu.LocalStream.Tests.csproj" />
     <Project Path="tests/DeltaZulu.LocalStream.Query.Tests/DeltaZulu.LocalStream.Query.Tests.csproj" />
+    <Project Path="tests/DeltaZulu.LocalStream.Query.LiteDB.Tests/DeltaZulu.LocalStream.Query.LiteDB.Tests.csproj" />
   </Folder>
 </Solution>

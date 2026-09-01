@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>DeltaZulu.LocalStream.Query.LiteDB</RootNamespace>
+    <AssemblyName>DeltaZulu.LocalStream.Query.LiteDB</AssemblyName>
+    <IsPackable>true</IsPackable>
+    <PackageId>DeltaZulu.LocalStream.Query.LiteDB</PackageId>
+    <Title>DeltaZulu Local Stream Query LiteDB State Store</Title>
+    <Description>LiteDB state-store adapter for DeltaZulu Local Stream Query.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DeltaZulu.LocalStream.Query/DeltaZulu.LocalStream.Query.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LiteDB" />
+  </ItemGroup>
+</Project>
