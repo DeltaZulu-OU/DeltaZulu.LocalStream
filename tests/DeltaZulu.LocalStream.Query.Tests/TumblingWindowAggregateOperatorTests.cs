@@ -27,6 +27,24 @@ public sealed class TumblingWindowAggregateOperatorTests
         Assert.AreNotEqual(first.Change.ChangeId, second.Change.ChangeId);
         Assert.AreEqual((1L, 1), AggregateResultValueCodec.Deserialize(first.Change.Value!.Value.Span));
         Assert.AreEqual((2L, 1), AggregateResultValueCodec.Deserialize(second.Change.Value!.Value.Span));
+        await transaction.CommitAsync(1);
+        var intents = await ReadIntents(store);
+        Assert.HasCount(2, intents);
+        Assert.IsTrue(intents.All(intent => intent.Target == "query-results"));
+        CollectionAssert.AreEquivalent(
+            new[] { first.Change.ChangeId, second.Change.ChangeId },
+            intents.Select(intent => QueryChangeCodec.Deserialize(intent.Payload.Span).ChangeId).ToArray());
+        var materializer = new InMemoryQueryResultStore();
+        foreach (var intent in intents)
+        {
+            await materializer.ApplyAsync(Domain, QueryChangeCodec.Deserialize(intent.Payload.Span));
+            Assert.IsTrue(await store.MarkOutputIntentDeliveredAsync(Domain, intent.ResultChangeId));
+        }
+
+        var materialized = await materializer.GetAsync(Domain, second.Change.Key);
+        Assert.IsNotNull(materialized);
+        Assert.AreEqual(2, materialized.Version);
+        Assert.HasCount(0, await ReadIntents(store));
     }
 
     [TestMethod]
@@ -132,6 +150,7 @@ public sealed class TumblingWindowAggregateOperatorTests
     private static TumblingWindowAggregateOperator Operator() => new(
         "window-aggregate",
         "detections",
+        "query-results",
         new TumblingWindowAssigner(TimeSpan.FromMinutes(5)),
         new LateEventPolicy(TimeSpan.FromMinutes(1), LateEventAction.SideOutput),
         new ExactDistinctPolicy(100, 4096));
@@ -143,4 +162,11 @@ public sealed class TumblingWindowAggregateOperatorTests
         string distinct) => new(partition, key, timestamp, Encoding.UTF8.GetBytes(distinct));
 
     private static SourceRange Range(long start, long end) => new("events", 0, start, end);
+
+    private static async Task<IReadOnlyList<OutputIntent>> ReadIntents(IQueryStateStore store)
+    {
+        var intents = new List<OutputIntent>();
+        await foreach (var intent in store.ReadPendingOutputIntentsAsync(Domain)) intents.Add(intent);
+        return intents;
+    }
 }

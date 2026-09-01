@@ -3,6 +3,7 @@ using DeltaZulu.LocalStream.Query.LiteDB;
 using DeltaZulu.LocalStream.Query.Operators;
 using DeltaZulu.LocalStream.Query.State;
 using DeltaZulu.LocalStream.Query.Time;
+using DeltaZulu.LocalStream.Query.Results;
 
 namespace DeltaZulu.LocalStream.Query.LiteDB.Tests;
 
@@ -35,6 +36,11 @@ public sealed class LiteDbTumblingAggregateOperatorTests
         Assert.AreEqual(
             (2L, 2),
             AggregateResultValueCodec.Deserialize(correction.Change.Value!.Value.Span));
+        await next.CommitAsync(1);
+        var intents = new List<OutputIntent>();
+        await foreach (var intent in reopened.ReadPendingOutputIntentsAsync(Domain)) intents.Add(intent);
+        Assert.HasCount(2, intents);
+        Assert.IsTrue(intents.All(intent => QueryChangeCodec.Deserialize(intent.Payload.Span).ChangeId == intent.ResultChangeId));
     }
 
     [TestMethod]
@@ -63,6 +69,7 @@ public sealed class LiteDbTumblingAggregateOperatorTests
     private static TumblingWindowAggregateOperator Operator() => new(
         "window-aggregate",
         "detections",
+        "query-results",
         new TumblingWindowAssigner(TimeSpan.FromMinutes(5)),
         new LateEventPolicy(TimeSpan.FromMinutes(1), LateEventAction.SideOutput),
         new ExactDistinctPolicy(100, 4096));

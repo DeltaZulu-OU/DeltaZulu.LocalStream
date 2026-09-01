@@ -16,6 +16,7 @@ public sealed class TumblingWindowAggregateOperator
 {
     private readonly string _operatorId;
     private readonly string _outputBindingId;
+    private readonly string _outputTarget;
     private readonly IWindowAssigner _windowAssigner;
     private readonly LateEventEvaluator _lateEvents;
     private readonly ExactDistinctPolicy _distinctPolicy;
@@ -23,14 +24,17 @@ public sealed class TumblingWindowAggregateOperator
     public TumblingWindowAggregateOperator(
         string operatorId,
         string outputBindingId,
+        string outputTarget,
         IWindowAssigner windowAssigner,
         LateEventPolicy lateEventPolicy,
         ExactDistinctPolicy distinctPolicy)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operatorId);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputBindingId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputTarget);
         _operatorId = operatorId;
         _outputBindingId = outputBindingId;
+        _outputTarget = outputTarget;
         _windowAssigner = windowAssigner ?? throw new ArgumentNullException(nameof(windowAssigner));
         _lateEvents = new LateEventEvaluator(lateEventPolicy);
         _distinctPolicy = distinctPolicy ?? throw new ArgumentNullException(nameof(distinctPolicy));
@@ -61,9 +65,9 @@ public sealed class TumblingWindowAggregateOperator
         state.AddEvent(input.CanonicalDistinctValue.Span);
         state.Save(transaction, stateKey);
         var kind = state.LogicalVersion == 1 ? QueryChangeKind.Upsert : QueryChangeKind.Correction;
-        return new TumblingAggregateProcessResult(
-            lateDecision,
-            CreateChange(transaction, input.LogicalKey, window, state, kind));
+        var change = CreateChange(transaction, input.LogicalKey, window, state, kind);
+        StageOutput(transaction, change);
+        return new TumblingAggregateProcessResult(lateDecision, change);
     }
 
     public async ValueTask<QueryChange?> FinalizeAsync(
@@ -97,7 +101,9 @@ public sealed class TumblingWindowAggregateOperator
         }
 
         state.Save(transaction, stateKey);
-        return CreateChange(transaction, logicalKey, window, state, QueryChangeKind.Finalize);
+        var change = CreateChange(transaction, logicalKey, window, state, QueryChangeKind.Finalize);
+        StageOutput(transaction, change);
+        return change;
     }
 
     private QueryChange CreateChange(
@@ -131,6 +137,12 @@ public sealed class TumblingWindowAggregateOperator
 
     private StateKey StateKey(int partition, string logicalKey, WindowInterval window) =>
         new(_operatorId, partition, logicalKey, window);
+
+    private void StageOutput(IStateTransaction transaction, QueryChange change) =>
+        transaction.AddOutputIntent(new OutputIntent(
+            change.ChangeId,
+            _outputTarget,
+            QueryChangeCodec.Serialize(change)));
 
     private static void EnsureWritable(IStateTransaction transaction)
     {
