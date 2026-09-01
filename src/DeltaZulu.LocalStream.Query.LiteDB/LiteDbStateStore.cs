@@ -101,6 +101,7 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
         {
             documents = _database.GetCollection(OutputIntentCollection)
                 .Find(LiteQuery.EQ("domain", DomainKey(domain)))
+                .OrderBy(document => document["changeId"].AsString, StringComparer.Ordinal)
                 .ToArray();
         }
         finally
@@ -115,6 +116,26 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
                 document["changeId"].AsString,
                 document["target"].AsString,
                 document["payload"].AsBinary.ToArray());
+        }
+    }
+
+    public async ValueTask<bool> MarkOutputIntentDeliveredAsync(
+        StateDomainId domain,
+        string resultChangeId,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(domain);
+        ArgumentException.ThrowIfNullOrWhiteSpace(resultChangeId);
+        await _writer.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return _database.GetCollection(OutputIntentCollection)
+                .Delete(Hash(DomainKey(domain), resultChangeId));
+        }
+        finally
+        {
+            _writer.Release();
         }
     }
 

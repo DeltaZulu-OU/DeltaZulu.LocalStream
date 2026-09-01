@@ -66,7 +66,10 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
         lock (_sync)
         {
             snapshot = _domains.TryGetValue(domain, out var state)
-                ? state.OutputIntents.Values.Select(Clone).ToArray()
+                ? state.OutputIntents.Values
+                    .OrderBy(intent => intent.ResultChangeId, StringComparer.Ordinal)
+                    .Select(Clone)
+                    .ToArray()
                 : [];
         }
 
@@ -77,6 +80,22 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
         }
 
         await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    public ValueTask<bool> MarkOutputIntentDeliveredAsync(
+        StateDomainId domain,
+        string resultChangeId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(domain);
+        ArgumentException.ThrowIfNullOrWhiteSpace(resultChangeId);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            var removed = _domains.TryGetValue(domain, out var state)
+                && state.OutputIntents.Remove(resultChangeId);
+            return ValueTask.FromResult(removed);
+        }
     }
 
     private DomainState GetOrCreate(StateDomainId domain)

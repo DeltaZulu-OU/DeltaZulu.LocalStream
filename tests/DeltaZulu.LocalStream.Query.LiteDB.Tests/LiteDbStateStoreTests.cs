@@ -70,6 +70,26 @@ public sealed class LiteDbStateStoreTests
         Assert.AreEqual(1, (await replay.CommitAsync(4)).Generation);
     }
 
+    [TestMethod]
+    public async Task DeliveredOutputIntent_RemainsRemovedAfterReopen()
+    {
+        var path = DatabasePath();
+        using (var store = new LiteDbStateStore(path))
+        {
+            await using (var transaction = await store.BeginTransactionAsync(Domain, Range))
+            {
+                transaction.AddOutputIntent(new OutputIntent("change", "target", new byte[] { 1 }));
+                await transaction.CommitAsync(4);
+            }
+
+            Assert.IsTrue(await store.MarkOutputIntentDeliveredAsync(Domain, "change"));
+            Assert.IsFalse(await store.MarkOutputIntentDeliveredAsync(Domain, "change"));
+        }
+
+        using var reopened = new LiteDbStateStore(path);
+        Assert.HasCount(0, await ReadIntents(reopened));
+    }
+
     private string DatabasePath()
     {
         var directory = Path.Combine(TestContext.TestRunDirectory!, Guid.NewGuid().ToString("N"));
