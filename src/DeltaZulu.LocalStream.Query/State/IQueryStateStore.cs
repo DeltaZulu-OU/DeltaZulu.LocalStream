@@ -1,5 +1,7 @@
 namespace DeltaZulu.LocalStream.Query.State;
 
+using DeltaZulu.LocalStream.Query.Results;
+
 public interface IQueryStateStore
 {
     ValueTask<IStateTransaction> BeginTransactionAsync(
@@ -21,6 +23,6 @@ public interface IQueryStateStore
     /// </summary>
     ValueTask<bool> MarkOutputIntentDeliveredAsync(
         StateDomainId domain,
-        string resultChangeId,
+        ResultChangeId resultChangeId,
         CancellationToken cancellationToken = default);
 }

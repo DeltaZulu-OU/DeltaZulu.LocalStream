@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using DeltaZulu.LocalStream.Query.Time;
+using DeltaZulu.LocalStream.Query.Results;
 
 namespace DeltaZulu.LocalStream.Query.State;
 
@@ -67,7 +68,7 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
         {
             snapshot = _domains.TryGetValue(domain, out var state)
                 ? state.OutputIntents.Values
-                    .OrderBy(intent => intent.ResultChangeId, StringComparer.Ordinal)
+                    .OrderBy(intent => intent.ResultChangeId.Value, StringComparer.Ordinal)
                     .Select(Clone)
                     .ToArray()
                 : [];
@@ -84,11 +85,11 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
 
     public ValueTask<bool> MarkOutputIntentDeliveredAsync(
         StateDomainId domain,
-        string resultChangeId,
+        ResultChangeId resultChangeId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(domain);
-        ArgumentException.ThrowIfNullOrWhiteSpace(resultChangeId);
+        if (resultChangeId == default) throw new ArgumentException("A result change identity is required.", nameof(resultChangeId));
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
@@ -123,7 +124,7 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
     private sealed class DomainState
     {
         public Dictionary<StateKey, byte[]> OperatorState { get; } = [];
-        public Dictionary<string, OutputIntent> OutputIntents { get; } = new(StringComparer.Ordinal);
+        public Dictionary<ResultChangeId, OutputIntent> OutputIntents { get; } = [];
         public HashSet<SourceRange> CommittedRanges { get; } = [];
         public CheckpointManifest? Checkpoint { get; set; }
     }
@@ -135,7 +136,7 @@ public sealed class InMemoryQueryStateStore : IQueryStateStore
         bool isAlreadyCommitted) : IStateTransaction
     {
         private readonly Dictionary<StateKey, byte[]?> _stateChanges = [];
-        private readonly Dictionary<string, OutputIntent> _outputIntents = new(StringComparer.Ordinal);
+        private readonly Dictionary<ResultChangeId, OutputIntent> _outputIntents = [];
         private WatermarkState? _watermark;
         private bool _completed;
 

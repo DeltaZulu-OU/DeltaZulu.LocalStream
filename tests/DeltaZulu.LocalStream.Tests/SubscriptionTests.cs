@@ -111,9 +111,8 @@ public sealed class SubscriptionTests
 
         Assert.AreEqual(6, archiveRecords.Count);
         Assert.AreEqual(6, silverRecords.Count);
-        CollectionAssert.AreEqual(
-            archiveRecords.Select(r => r.EventId).ToList(),
-            silverRecords.Select(r => r.EventId).ToList());
+        Assert.AreSequenceEqual(
+            archiveRecords.Select(r => r.EventId).ToList(), silverRecords.Select(r => r.EventId).ToList());
 
         // Silver commits partial progress; archive stays fully committed.
         await silver.CommitAsync(silverRecords[1].Position);

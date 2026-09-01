@@ -1,6 +1,7 @@
 using DeltaZulu.LocalStream.Query.LiteDB;
 using DeltaZulu.LocalStream.Query.State;
 using DeltaZulu.LocalStream.Query.Time;
+using DeltaZulu.LocalStream.Query.Results;
 
 namespace DeltaZulu.LocalStream.Query.LiteDB.Tests;
 
@@ -21,7 +22,7 @@ public sealed class LiteDbStateStoreTests
         {
             transaction.PutOperatorState(Key, new byte[] { 1, 2 });
             transaction.SetWatermark(new WatermarkState(DateTimeOffset.UnixEpoch, []));
-            transaction.AddOutputIntent(new OutputIntent("change", "target", new byte[] { 3 }));
+            transaction.AddOutputIntent(new OutputIntent(ChangeId(), "target", new byte[] { 3 }));
             await transaction.CommitAsync(4);
         }
 
@@ -46,7 +47,7 @@ public sealed class LiteDbStateStoreTests
         await using (var transaction = await store.BeginTransactionAsync(Domain, Range))
         {
             transaction.PutOperatorState(Key, new byte[] { 1 });
-            transaction.AddOutputIntent(new OutputIntent("change", "target", new byte[] { 2 }));
+            transaction.AddOutputIntent(new OutputIntent(ChangeId(), "target", new byte[] { 2 }));
         }
 
         Assert.IsNull(await store.GetCheckpointAsync(Domain));
@@ -78,12 +79,12 @@ public sealed class LiteDbStateStoreTests
         {
             await using (var transaction = await store.BeginTransactionAsync(Domain, Range))
             {
-                transaction.AddOutputIntent(new OutputIntent("change", "target", new byte[] { 1 }));
+                transaction.AddOutputIntent(new OutputIntent(ChangeId(), "target", new byte[] { 1 }));
                 await transaction.CommitAsync(4);
             }
 
-            Assert.IsTrue(await store.MarkOutputIntentDeliveredAsync(Domain, "change"));
-            Assert.IsFalse(await store.MarkOutputIntentDeliveredAsync(Domain, "change"));
+            Assert.IsTrue(await store.MarkOutputIntentDeliveredAsync(Domain, ChangeId()));
+            Assert.IsFalse(await store.MarkOutputIntentDeliveredAsync(Domain, ChangeId()));
         }
 
         using var reopened = new LiteDbStateStore(path);
@@ -107,4 +108,14 @@ public sealed class LiteDbStateStoreTests
 
         return intents;
     }
+
+    private static ResultChangeId ChangeId() => ResultIdentityBuilder.Build(new ResultIdentity(
+        Domain.QueryId,
+        Domain.Revision,
+        "target",
+        "aggregate",
+        "key",
+        null,
+        1,
+        Range));
 }

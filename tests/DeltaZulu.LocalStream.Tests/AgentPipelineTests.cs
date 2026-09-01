@@ -78,9 +78,8 @@ public sealed class AgentPipelineTests
 
         Assert.AreEqual(12, archived.Count);
         Assert.AreEqual(12, normalized.Count);
-        CollectionAssert.AreEquivalent(
-            archived.Select(r => r.EventId).ToList(),
-            normalized.Select(r => r.EventId).ToList());
+        Assert.AreSequenceEqual(
+            archived.Select(r => r.EventId).ToList(), normalized.Select(r => r.EventId).ToList(), Microsoft.VisualStudio.TestTools.UnitTesting.SequenceOrder.InAnyOrder);
     }
 
     [TestMethod]

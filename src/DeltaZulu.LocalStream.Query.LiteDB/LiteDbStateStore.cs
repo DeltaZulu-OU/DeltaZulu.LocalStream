@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using DeltaZulu.LocalStream.Query.State;
 using DeltaZulu.LocalStream.Query.Time;
+using DeltaZulu.LocalStream.Query.Results;
 using LiteDB;
 using LiteQuery = global::LiteDB.Query;
 
@@ -113,7 +114,7 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             yield return new OutputIntent(
-                document["changeId"].AsString,
+                ResultChangeId.Parse(document["changeId"].AsString),
                 document["target"].AsString,
                 document["payload"].AsBinary.ToArray());
         }
@@ -121,17 +122,17 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
 
     public async ValueTask<bool> MarkOutputIntentDeliveredAsync(
         StateDomainId domain,
-        string resultChangeId,
+        ResultChangeId resultChangeId,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(domain);
-        ArgumentException.ThrowIfNullOrWhiteSpace(resultChangeId);
+        if (resultChangeId == default) throw new ArgumentException("A result change identity is required.", nameof(resultChangeId));
         await _writer.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return _database.GetCollection(OutputIntentCollection)
-                .Delete(Hash(DomainKey(domain), resultChangeId));
+                .Delete(Hash(DomainKey(domain), resultChangeId.Value));
         }
         finally
         {
@@ -222,7 +223,7 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
         private bool _completed;
         private WatermarkState? _watermark;
         private readonly Dictionary<StateKey, byte[]?> _changes = [];
-        private readonly Dictionary<string, OutputIntent> _intents = new(StringComparer.Ordinal);
+        private readonly Dictionary<ResultChangeId, OutputIntent> _intents = [];
 
         public StateDomainId Domain { get; } = domain;
         public SourceRange SourceRange { get; } = sourceRange;
@@ -321,7 +322,7 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
             var outputs = store._database.GetCollection(OutputIntentCollection);
             foreach (var intent in _intents.Values)
             {
-                var id = Hash(domainKey, intent.ResultChangeId);
+                var id = Hash(domainKey, intent.ResultChangeId.Value);
                 var existing = outputs.FindById(id);
                 if (existing is not null
                     && (existing["target"].AsString != intent.Target
@@ -332,7 +333,7 @@ public sealed class LiteDbStateStore : IQueryStateStore, IDisposable
 
                 outputs.Upsert(new BsonDocument
                 {
-                    ["_id"] = id, ["domain"] = domainKey, ["changeId"] = intent.ResultChangeId,
+                    ["_id"] = id, ["domain"] = domainKey, ["changeId"] = intent.ResultChangeId.Value,
                     ["target"] = intent.Target, ["payload"] = intent.Payload.ToArray(),
                 });
             }

@@ -1,18 +1,23 @@
 namespace DeltaZulu.LocalStream.Query.State;
 
+using DeltaZulu.LocalStream.Query.Results;
+
 /// <summary>Exact durable output staged before an external delivery attempt.</summary>
 public sealed record OutputIntent
 {
-    public OutputIntent(string resultChangeId, string target, ReadOnlyMemory<byte> payload)
+    public OutputIntent(ResultChangeId resultChangeId, string target, ReadOnlyMemory<byte> payload)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(resultChangeId);
+        if (resultChangeId == default)
+        {
+            throw new ArgumentException("A result change identity is required.", nameof(resultChangeId));
+        }
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         ResultChangeId = resultChangeId;
         Target = target;
         Payload = payload;
     }
 
-    public string ResultChangeId { get; }
+    public ResultChangeId ResultChangeId { get; }
     public string Target { get; }
     public ReadOnlyMemory<byte> Payload { get; init; }
 }

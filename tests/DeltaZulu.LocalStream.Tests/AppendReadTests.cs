@@ -202,7 +202,7 @@ public sealed class AppendReadTests
                 consumer, "agent.output", new ReadOptions { Start = ReadStart.Earliest });
 
             Assert.AreEqual(7, records.Count);
-            CollectionAssert.AreEqual(eventIds, records.Select(r => r.EventId).ToList());
+            Assert.AreSequenceEqual(eventIds, records.Select(r => r.EventId).ToList());
 
             // New appends continue the offset sequence after recovery.
             var producer = host.CreateProducer<TestEvent>();

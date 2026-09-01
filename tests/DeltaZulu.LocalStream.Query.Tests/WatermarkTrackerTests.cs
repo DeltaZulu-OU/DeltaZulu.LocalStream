@@ -55,9 +55,8 @@ public sealed class WatermarkTrackerTests
             original.CaptureState());
 
         Assert.AreEqual(original.WatermarkUtc, restored.WatermarkUtc);
-        CollectionAssert.AreEqual(
-            new[] { 0, 1 },
-            restored.CaptureState().Partitions.Select(state => state.Partition).ToArray());
+        Assert.AreSequenceEqual(
+            new[] { 0, 1 }, restored.CaptureState().Partitions.Select(state => state.Partition).ToArray());
         Assert.AreEqual(Epoch.AddMinutes(7), restored.Advance(Epoch.AddMinutes(1)));
     }
 
