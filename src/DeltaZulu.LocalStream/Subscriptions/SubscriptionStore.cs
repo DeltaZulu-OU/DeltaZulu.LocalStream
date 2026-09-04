@@ -28,8 +28,18 @@ internal sealed class SubscriptionStore(string rootDirectory)
                 return NoCheckpoint;
             }
 
-            var document = JsonSerializer.Deserialize<CheckpointDocument>(File.ReadAllText(path));
-            return document?.CommittedOffset ?? NoCheckpoint;
+            try
+            {
+                var document = JsonSerializer.Deserialize<CheckpointDocument>(File.ReadAllText(path));
+                return document?.CommittedOffset ?? NoCheckpoint;
+            }
+            catch (JsonException exception)
+            {
+                // A JsonException thrown from GetOrAdd's factory is not cached — the
+                // key is left unpopulated, so repairing or replacing the file and
+                // retrying (or calling ClearCheckpoint) recovers normally.
+                throw new CorruptCheckpointException(key.Subscription, key.Topic, key.Partition, path, exception);
+            }
         });
     }
 
