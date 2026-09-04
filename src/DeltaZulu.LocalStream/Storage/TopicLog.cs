@@ -6,6 +6,7 @@ namespace DeltaZulu.LocalStream.Storage;
 internal sealed class TopicLog
 {
     private readonly PartitionLog[] _partitions;
+    private readonly object _totalSizeBytesSync = new();
     private int _roundRobin = -1;
     private long _cachedTotalSizeBytes;
     private bool _totalSizeBytesDirty = true;
@@ -30,19 +31,26 @@ internal sealed class TopicLog
 
     /// <summary>
     /// Total on-disk bytes across all partitions. Cached until invalidated by
-    /// retention. Avoids O(segments) summation on every append size check.
+    /// an append or retention. Avoids O(segments) summation on every append
+    /// size check. The cache and its dirty flag are read and written under a
+    /// lock: this value gates the <see cref="TopicOptions.MaxTotalBytes"/>
+    /// admission check, and concurrent producers racing an unsynchronized
+    /// flag could both observe a stale total and jointly overshoot the cap.
     /// </summary>
     public long TotalSizeBytes
     {
         get
         {
-            if (_totalSizeBytesDirty)
+            lock (_totalSizeBytesSync)
             {
-                _cachedTotalSizeBytes = _partitions.Sum(p => p.SizeBytes);
-                _totalSizeBytesDirty = false;
-            }
+                if (_totalSizeBytesDirty)
+                {
+                    _cachedTotalSizeBytes = _partitions.Sum(p => p.SizeBytes);
+                    _totalSizeBytesDirty = false;
+                }
 
-            return _cachedTotalSizeBytes;
+                return _cachedTotalSizeBytes;
+            }
         }
     }
 
@@ -71,7 +79,10 @@ internal sealed class TopicLog
             // Appends change the on-disk size used by the topic hard-cap check.
             // Invalidate even if storage throws because an append may have written
             // part of its data before the failure is surfaced.
-            _totalSizeBytesDirty = true;
+            lock (_totalSizeBytesSync)
+            {
+                _totalSizeBytesDirty = true;
+            }
         }
     }
 
@@ -116,7 +127,10 @@ internal sealed class TopicLog
         {
             // A batch can touch one or more partitions, including partially
             // completed batches that fail with an I/O exception.
-            _totalSizeBytesDirty = true;
+            lock (_totalSizeBytesSync)
+            {
+                _totalSizeBytesDirty = true;
+            }
         }
 
         return positions;
@@ -130,7 +144,10 @@ internal sealed class TopicLog
         }
 
         // Retention deletes segments, so invalidate the cached size.
-        _totalSizeBytesDirty = true;
+        lock (_totalSizeBytesSync)
+        {
+            _totalSizeBytesDirty = true;
+        }
     }
 
     private int SelectPartition(AppendOptions? options)

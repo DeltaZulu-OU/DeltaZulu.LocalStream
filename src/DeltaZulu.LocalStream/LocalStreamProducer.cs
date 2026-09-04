@@ -32,14 +32,19 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             return ValueTask.FromResult(failure);
         }
 
-        if (log.Options.MaxTotalBytes is { } maxTotalBytes && log.TotalSizeBytes >= maxTotalBytes)
+        if (log.Options.MaxTotalBytes is { } maxTotalBytes)
         {
-            return ValueTask.FromResult(new AppendResult
+            var estimatedFrameBytes = Storage.PartitionLog.EstimateFrameBytes(payloadBytes, options?.Key, options?.Headers);
+            if (log.TotalSizeBytes + estimatedFrameBytes > maxTotalBytes)
             {
-                Status = AppendStatus.RejectedStreamFull,
-                Reason = $"Topic '{topic}' holds {log.TotalSizeBytes} bytes, at or above its {maxTotalBytes}-byte cap. " +
-                    "Retention must free sealed segments before appends resume.",
-            });
+                return ValueTask.FromResult(new AppendResult
+                {
+                    Status = AppendStatus.RejectedStreamFull,
+                    Reason = $"Topic '{topic}' holds {log.TotalSizeBytes} bytes; this record's estimated " +
+                        $"{estimatedFrameBytes} bytes would exceed its {maxTotalBytes}-byte cap. " +
+                        "Retention must free sealed segments before appends resume.",
+                });
+            }
         }
 
         var eventId = options?.EventId ?? Guid.NewGuid().ToString("N");
@@ -90,24 +95,39 @@ internal sealed class LocalStreamProducer<T>(LocalStreamHost host) : ILocalStrea
             });
         }
 
-        if (log.Options.MaxTotalBytes is { } maxTotalBytes && log.TotalSizeBytes >= maxTotalBytes)
-        {
-            return Fill(results, new AppendResult
-            {
-                Status = AppendStatus.RejectedStreamFull,
-                Reason = $"Topic '{topic}' holds {log.TotalSizeBytes} bytes, at or above its {maxTotalBytes}-byte cap.",
-            });
-        }
-
         var publishedUtc = DateTimeOffset.UtcNow;
         var pendingIndexes = new List<int>(records.Count);
         var pending = new List<Storage.PartitionLog.PendingRecord>(records.Count);
+
+        // Running total, not a single pre-batch check: a batch can straddle the
+        // cap, and checking only once before the loop would let the whole batch
+        // through as long as the topic wasn't already at capacity.
+        var maxTotalBytes = log.Options.MaxTotalBytes;
+        var projectedTotalBytes = log.TotalSizeBytes;
         for (var i = 0; i < records.Count; i++)
         {
             if (!TrySerializePayload(log, topic, records[i], out var payloadBytes, out var failure))
             {
                 results[i] = failure;
                 continue;
+            }
+
+            if (maxTotalBytes is { } cap)
+            {
+                var estimatedFrameBytes = Storage.PartitionLog.EstimateFrameBytes(payloadBytes, options?.Key, options?.Headers);
+                if (projectedTotalBytes + estimatedFrameBytes > cap)
+                {
+                    results[i] = new AppendResult
+                    {
+                        Status = AppendStatus.RejectedStreamFull,
+                        Reason = $"Topic '{topic}' holds {log.TotalSizeBytes} bytes; admitting this record " +
+                            $"would exceed its {cap}-byte cap. Retention must free sealed segments before " +
+                            "appends resume.",
+                    };
+                    continue;
+                }
+
+                projectedTotalBytes += estimatedFrameBytes;
             }
 
             pendingIndexes.Add(i);

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace DeltaZulu.LocalStream.Storage;
@@ -408,6 +409,42 @@ internal sealed class PartitionLog
         }
 
         return buffer.WrittenSpan.ToArray();
+    }
+
+    /// <summary>
+    /// Conservative over-estimate of the on-disk bytes one record will add:
+    /// the CRC frame, the envelope's fixed fields, and <paramref name="key"/>/
+    /// <paramref name="headers"/> content on top of the payload. Used by the
+    /// producer's admission control to reject an append that would push a
+    /// topic over <see cref="TopicOptions.MaxTotalBytes"/> instead of
+    /// checking the pre-append size only. Over-estimating is the safe
+    /// direction for a hard cap — an append may be rejected marginally
+    /// early, never let through late.
+    /// </summary>
+    internal static long EstimateFrameBytes(
+        byte[] payloadJson,
+        string? key,
+        IReadOnlyDictionary<string, string>? headers)
+    {
+        const int FrameOverhead = 10; // 8 hex CRC chars + separating space + trailing newline
+        const int EnvelopeFieldOverhead = 160; // property names/punctuation for offset, eventId, timestamps
+
+        long estimate = FrameOverhead + EnvelopeFieldOverhead + payloadJson.Length;
+
+        if (key is not null)
+        {
+            estimate += Encoding.UTF8.GetByteCount(key) + 16;
+        }
+
+        if (headers is not null)
+        {
+            foreach (var (headerKey, headerValue) in headers)
+            {
+                estimate += Encoding.UTF8.GetByteCount(headerKey) + Encoding.UTF8.GetByteCount(headerValue) + 8;
+            }
+        }
+
+        return estimate;
     }
 
     private static byte[] FrameLine(ReadOnlySpan<byte> json)

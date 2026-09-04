@@ -32,6 +32,8 @@ public sealed class LocalStreamHost : IAsyncDisposable
             throw new InvalidOperationException("The host is already started.");
         }
 
+        ValidateTopics();
+
         Directory.CreateDirectory(_options.StoragePath);
         WriteTopicMetadata();
 
@@ -45,6 +47,43 @@ public sealed class LocalStreamHost : IAsyncDisposable
         RegisterConfiguredSubscriptions();
         _started = true;
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Rejects a topic configuration that would deadlock retention before any
+    /// storage is touched. <see cref="Storage.PartitionLog.ApplyRetention"/>
+    /// never deletes a partition's newest (active) segment, so a partition
+    /// can never shrink below <see cref="TopicOptions.MaxSegmentBytes"/>. If
+    /// <see cref="TopicOptions.MaxTotalBytes"/> is set below the combined
+    /// size of all partitions' active segments, appends are rejected once
+    /// every partition fills its first segment, no partition ever rolls to a
+    /// second segment, and retention has nothing sealed left to free — a
+    /// permanent wedge rather than a transient cap.
+    /// </summary>
+    private void ValidateTopics()
+    {
+        foreach (var topic in _options.Topics)
+        {
+            if (topic.MaxSegmentBytes <= 0)
+            {
+                throw new InvalidOperationException(
+                    $"Topic '{topic.Name}' has MaxSegmentBytes={topic.MaxSegmentBytes}; it must be positive.");
+            }
+
+            if (topic.MaxTotalBytes is { } maxTotalBytes)
+            {
+                var minimumViableCap = (long)topic.Partitions * topic.MaxSegmentBytes;
+                if (maxTotalBytes < minimumViableCap)
+                {
+                    throw new InvalidOperationException(
+                        $"Topic '{topic.Name}' has MaxTotalBytes={maxTotalBytes}, below its {topic.Partitions} " +
+                        $"partition(s)' combined MaxSegmentBytes ({minimumViableCap}). Retention never deletes " +
+                        "a partition's active segment, so this configuration would wedge permanently once " +
+                        "every partition fills its first segment. Raise MaxTotalBytes to at least " +
+                        $"{minimumViableCap}, or lower MaxSegmentBytes or Partitions.");
+                }
+            }
+        }
     }
 
     public ILocalStreamProducer<T> CreateProducer<T>()
