@@ -10,6 +10,15 @@ internal sealed class LocalStreamConsumer<T>(LocalStreamHost host, string subscr
 {
     public string SubscriptionId { get; } = subscriptionId;
 
+    /// <remarks>
+    /// The outer <c>foreach</c> below drains each partition to completion
+    /// before starting the next — sequential, not interleaved. All I/O is
+    /// synchronous <see cref="PartitionLog.Read"/>, blocking on file reads;
+    /// the only <c>await</c> is the completed task at the end, present
+    /// solely so this method satisfies the <c>async IAsyncEnumerable&lt;T&gt;</c>
+    /// signature. See the interface doc comment for the resulting
+    /// caller-visible behavior.
+    /// </remarks>
     public async IAsyncEnumerable<StreamRecord<T>> ReadAsync(
         string topic,
         ReadOptions? options = null,
