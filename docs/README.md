@@ -1,32 +1,19 @@
 # DeltaZulu.LocalStream — documentation
 
-Architecture, Decisions, Constraints and roadmaps for the DeltaZulu estate live
-in **[`DeltaZulu-OU/docs`](https://github.com/DeltaZulu-OU/docs)**, not here.
+Estate-wide architectural policy, Constraints, the current target and planning are maintained in [DeltaZulu-OU/docs](https://github.com/DeltaZulu-OU/docs). Local documents describe source, interfaces and historical reasoning; they do not override Accepted Decisions.
 
 | Looking for | Go to |
 |---|---|
-| Decisions governing this repository | [`architecture/GOVERNING-DECISIONS.md`](https://github.com/DeltaZulu-OU/docs/blob/main/architecture/GOVERNING-DECISIONS.md) |
-| The estate-wide pipeline architecture | [`architecture/PIPELINE.md`](https://github.com/DeltaZulu-OU/docs/blob/main/architecture/PIPELINE.md) — read with `PIPELINE-ERRATA.md` |
-| Facts the estate does not control | [`constraints/`](https://github.com/DeltaZulu-OU/docs/tree/main/constraints) |
-| This repository's historical ADRs | [`archive/DeltaZulu.LocalStream/`](https://github.com/DeltaZulu-OU/docs/tree/main/archive/DeltaZulu.LocalStream) |
-| Roadmaps | [`roadmaps/`](https://github.com/DeltaZulu-OU/docs/tree/main/roadmaps) |
-| Verification evidence | [`reports/`](https://github.com/DeltaZulu-OU/docs/tree/main/reports) |
+| Current target | [NRT pipeline](https://github.com/DeltaZulu-OU/docs/blob/master/architecture/NRT-PIPELINE.md) |
+| Governing Decisions | [Decision index](https://github.com/DeltaZulu-OU/docs/blob/master/architecture/GOVERNING-DECISIONS.md) |
+| Constraints and qualifications | [Constraints](https://github.com/DeltaZulu-OU/docs/tree/master/constraints) |
+| Active work | [Consolidated roadmap](https://github.com/DeltaZulu-OU/docs/blob/master/roadmaps/CONSISTENCY-CORRECTNESS-ROADMAP.md) (C05–C07, C14) |
+| Historical architecture | [Pipeline import](https://github.com/DeltaZulu-OU/docs/blob/master/architecture/PIPELINE.md) with [errata](https://github.com/DeltaZulu-OU/docs/blob/master/architecture/PIPELINE-ERRATA.md) |
+| Historical ADRs | [Archive](https://github.com/DeltaZulu-OU/docs/tree/master/archive/DeltaZulu.LocalStream) |
+| Dated verification evidence | [Reports](https://github.com/DeltaZulu-OU/docs/tree/master/reports) |
 
-Decisions are numbered globally across the estate. The per-repository scheme this
-replaced produced collisions that citations could not resolve — `DeltaZulu.Agent`
-ADR 0014 and `DeltaZulu.Platform` ADR 0014 decide opposite things, and the Agent
-carried two different ADR 0003 documents, so "ADR 0003" did not resolve even
-within one repository.
+## Local scope
 
-## What remains here
+The core owns payload-opaque node-local logs, partitions, offsets, independent subscriptions and retention. Query and Query.LiteDB are separate packages for already-bound operators and optional durable state/results. No Kusto binding belongs in the core; DEC-0033 is the current estate target. Historical version observations must be rechecked before publishing.
 
-- `LOCAL_STREAM_ARCHITECTURE.md`.
-
-This repository is **payload-opaque** and must stay so: it carries
-`byte[] PayloadJson` verbatim and never interprets it (`CON-0013`). Never add
-`DeltaZulu.Kql` or a `Kusto.Language` pin here — that opacity is what keeps this
-library out of the type contract's version span entirely.
-
-Note also that the declared version is currently *below* the published one; see
-`reports/2026-08-15-version-pin-reconciliation.md` in the docs repository before
-the next release.
+Only tested behavior is verified; a target architecture or historical report is not proof of current runtime conformance.
