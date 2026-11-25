@@ -1,5 +1,8 @@
 # DeltaZulu.LocalStream Architecture
 
+> **Authority and status note — 2026-11-25.** Read this document as a core-library architecture reference, not the entire current estate design. [DEC-0033 / NRT pipeline](https://github.com/DeltaZulu-OU/docs/blob/master/architecture/NRT-PIPELINE.md) selects LocalStream as the node-local stream substrate; Query and Query.LiteDB now provide separate already-bound query operators and optional durable state/result stores. The core stays payload-opaque, with KQL parsing and binding outside it. Earlier statements about a future processor model are not proof of current capability or end-to-end Platform integration.
+
+
 ## Status
 
 Proposed architecture for a local, Kafka/Pulsar/Flink-inspired stream runtime used by DeltaZulu Platform and related services.
