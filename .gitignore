@@ -376,6 +376,3 @@ FodyWeavers.xsd
 *.db-shm
 *.db-wal
 *.db.wal
-
-# Lock file
-packages.lock.json

@@ -7,6 +7,8 @@ on:
       - '.github/workflows/*.yml'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'global.json'
       - '*.slnx'              # Triggers on any solution file changes without hardcoding the name
       - 'src/**'
       - 'tests/**'
@@ -19,6 +21,8 @@ on:
       - '.github/workflows/*.yml'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
+      - 'NuGet.config'
+      - 'global.json'
       - '*.slnx'
       - 'src/**'
       - 'tests/**'
@@ -75,10 +79,14 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
 
       - name: Restore packages
         run: dotnet restore --locked-mode
+
+      - name: Verify dependency locks are unchanged
+        shell: bash
+        run: test -z "$(git status --porcelain --untracked-files=all -- ':(glob)**/packages.lock.json')"
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
