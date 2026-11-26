@@ -85,6 +85,60 @@ public sealed class LiteDbQueryResultStoreTests
         CollectionAssert.AreEqual(new[] { "a", "z" }, rows.Select(row => row.Key.CanonicalKey).ToArray());
     }
 
+    [TestMethod]
+    public async Task PendingIntent_ReplayedAfterSinkCommitBeforeAcknowledgement()
+    {
+        var statePath = DatabasePath();
+        var resultPath = DatabasePath();
+        var change = Change(QueryChangeKind.Upsert, 1, new byte[] { 1, 2 });
+        var payload = QueryChangeCodec.Serialize(change);
+
+        using (var state = new LiteDbStateStore(statePath))
+        {
+            await using var transaction = await state.BeginTransactionAsync(Domain, Range);
+            transaction.AddOutputIntent(new OutputIntent(change.ChangeId, "results", payload));
+            await transaction.CommitAsync(Range.EndOffset);
+        }
+
+        using (var state = new LiteDbStateStore(statePath))
+        using (var results = new LiteDbQueryResultStore(resultPath))
+        {
+            await foreach (var intent in state.ReadPendingOutputIntentsAsync(Domain))
+            {
+                CollectionAssert.AreEqual(payload, intent.Payload.ToArray());
+                Assert.AreEqual(MaterializationOutcome.Applied,
+                    await results.ApplyAsync(Domain, QueryChangeCodec.Deserialize(intent.Payload.Span)));
+            }
+            // Simulate interruption after the sink commit, before delivery confirmation.
+        }
+
+        using (var state = new LiteDbStateStore(statePath))
+        using (var results = new LiteDbQueryResultStore(resultPath))
+        {
+            var count = 0;
+            await foreach (var intent in state.ReadPendingOutputIntentsAsync(Domain))
+            {
+                count++;
+                Assert.AreEqual(change.ChangeId, intent.ResultChangeId);
+                Assert.AreEqual(MaterializationOutcome.Duplicate,
+                    await results.ApplyAsync(Domain, QueryChangeCodec.Deserialize(intent.Payload.Span)));
+                Assert.IsTrue(await state.MarkOutputIntentDeliveredAsync(Domain, intent.ResultChangeId));
+            }
+            Assert.AreEqual(1, count);
+            var result = await results.GetAsync(Domain, Key);
+            Assert.IsNotNull(result);
+            CollectionAssert.AreEqual(new byte[] { 1, 2 }, result.Value!.Value.ToArray());
+            Assert.AreEqual(1L, result.Version);
+        }
+
+        using var reopened = new LiteDbStateStore(statePath);
+        await foreach (var intent in reopened.ReadPendingOutputIntentsAsync(Domain))
+        {
+            Assert.Fail($"Delivered intent {intent.ResultChangeId} remained pending.");
+        }
+        Assert.AreEqual(Range.EndOffset, (await reopened.GetCheckpointAsync(Domain))!.CursorOffset);
+    }
+
     private static QueryChange Change(
         QueryChangeKind kind,
         long version,
