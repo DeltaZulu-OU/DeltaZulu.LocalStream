@@ -18,7 +18,7 @@
     <Company>DeltaZulu OÜ</Company>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <!-- The single release-version authority for assemblies and NuGet packages. -->
-    <Version>0.1.0</Version>
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <PropertyGroup Label="Determinism and reproducibility">

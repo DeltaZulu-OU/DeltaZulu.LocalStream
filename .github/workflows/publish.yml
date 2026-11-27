@@ -22,7 +22,7 @@ env:
 
 jobs:
   publish:
-    name: Publish DeltaZulu.LocalStream NuGet package
+    name: Publish LocalStream package family
     runs-on: ubuntu-latest
 
     steps:
@@ -103,12 +103,15 @@ jobs:
         run: dotnet build DeltaZulu.LocalStream.slnx --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test tests/DeltaZulu.LocalStream.Tests/DeltaZulu.LocalStream.Tests.csproj --configuration Release --no-build --no-restore
+        run: dotnet test DeltaZulu.LocalStream.slnx --configuration Release --no-build --no-restore
 
       - name: Pack library
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.package_version }}
-        run: dotnet pack src/DeltaZulu.LocalStream/DeltaZulu.LocalStream.csproj --configuration Release --no-build --no-restore --output "$PACKAGE_OUTPUT" /p:PackageVersion="$PACKAGE_VERSION"
+        run: |
+          for project in DeltaZulu.LocalStream DeltaZulu.LocalStream.Query DeltaZulu.LocalStream.Query.LiteDB; do
+            dotnet pack "src/$project/$project.csproj" --configuration Release --no-build --no-restore --output "$PACKAGE_OUTPUT" /p:PackageVersion="$PACKAGE_VERSION"
+          done
 
       - name: Inspect package contents
         env:
@@ -117,6 +120,10 @@ jobs:
         run: |
           set -euo pipefail
           package="$PACKAGE_OUTPUT/DeltaZulu.LocalStream.$PACKAGE_VERSION.nupkg"
+          for project in DeltaZulu.LocalStream.Query DeltaZulu.LocalStream.Query.LiteDB; do
+            query_package="$PACKAGE_OUTPUT/$project.$PACKAGE_VERSION.nupkg"
+            unzip -Z1 "$query_package" | grep -Fx "lib/net10.0/$project.dll"
+          done
           unzip -l "$package"
           unzip -Z1 "$package" | grep -Fx README.md
           unzip -Z1 "$package" | grep -Fx LICENSE.txt
